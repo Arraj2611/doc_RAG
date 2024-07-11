@@ -1,0 +1,10 @@
+langchain
+groq
+PyMuPDF
+python-docx
+Flask
+langchain
+langchain_groq
+langchain_core
+langchain_community
+numpy
