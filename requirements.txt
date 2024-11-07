@@ -1,0 +1,17 @@
+langchain
+groq
+PyMuPDF
+python-docx
+Flask
+langchain
+llama-parse
+qdrant-client
+unstructured[md]
+langchain_groq
+langchain_core
+fastembed
+flashrank
+langchain_community
+streamlit
+langchain_experimental
+langchain_qdrant

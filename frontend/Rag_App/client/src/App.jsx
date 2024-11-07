@@ -1,3 +1,35 @@
+// // import React from "react";
+// // import {
+// //   BrowserRouter as Router,
+// //   Route,
+// //   Routes,
+// //   Navigate,
+// // } from "react-router-dom";
+// // import Register from "./components/Register/Register";
+// // import Login from "./components/Login/Login";
+// // import Sidebar from "./components/Sidebar/Sidebar"; // Import Sidebar
+// // import { ToastContainer } from "react-toastify";
+// // import "react-toastify/dist/ReactToastify.css";
+
+// // const App = () => {
+// //   return (
+
+// //     <Router>
+// //       <Routes>
+// //         <Route path="/" element={<Login />} />
+// //         <Route path="/login" element={<Login />} />
+// //         <Route path="/sidebar" element={<Sidebar />} />
+// //         <Route path="/register" element={<Register />} />
+// //         <Route path="*" element={<Navigate to="/" />} />
+// //       </Routes>
+// //       <ToastContainer />
+// //     </Router>
+
+// //   );
+// // };
+
+// // export default App;
+
 // import React from "react";
 // import {
 //   BrowserRouter as Router,
@@ -7,10 +39,10 @@
 // } from "react-router-dom";
 // import Register from "./components/Register/Register";
 // import Login from "./components/Login/Login";
-// import Home from "./components/Home/Home";
+// import Sidebar from "./components/Sidebar/Sidebar";
+// import Main from "./components/Main/Main";
 // import { ToastContainer } from "react-toastify";
 // import "react-toastify/dist/ReactToastify.css";
-// import "./App.css";
 
 // const App = () => {
 //   return (
@@ -18,11 +50,12 @@
 //       <Routes>
 //         <Route path="/" element={<Login />} />
 //         <Route path="/login" element={<Login />} />
-//         <Route path="/home" element={<Home />} />
+//         <Route path="/sidebar" element={<Sidebar />} />
 //         <Route path="/register" element={<Register />} />
 //         <Route path="*" element={<Navigate to="/" />} />
 //       </Routes>
 //       <ToastContainer />
+//       <Main/>
 //     </Router>
 //   );
 // };
@@ -38,26 +71,34 @@ import {
 } from "react-router-dom";
 import Register from "./components/Register/Register";
 import Login from "./components/Login/Login";
-import Home from "./components/Home/Home";
+import Sidebar from "./components/Sidebar/Sidebar";
+import Main from "./components/Main/Main";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import "./App.css";
-import { ThemeProvider } from "./components/ThemeContext";
 
 const App = () => {
   return (
-    <ThemeProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<Login />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/home" element={<Home />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
-        <ToastContainer />
-      </Router>
-    </ThemeProvider>
+    <Router>
+      <ToastContainer />
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* Sidebar route */}
+        <Route path="/sidebar" element={<Sidebar />}>
+          <Route path="main" element={<Main />} />
+        </Route>
+
+        {/* Redirect for undefined routes */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+
+      {/* Only render Main component if on the sidebar page */}
+      <Routes>
+        <Route path="/sidebar/*" element={<Main />} />
+      </Routes>
+    </Router>
   );
 };
 

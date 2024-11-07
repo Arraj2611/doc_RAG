@@ -7,3 +7,20 @@
   font-family: outfit;
   scroll-behavior: smooth;
 }
+#root{
+  min-height: 100vh;
+  display: flex;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.full-height {
+  display: flex;
+  flex-direction: column;
+}
+
+.hide {
+  display: none; /* Class to hide content when needed */
+}
