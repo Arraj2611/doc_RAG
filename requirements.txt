@@ -6,7 +6,7 @@ Flask
 langchain
 llama-parse
 qdrant-client
-unstructured[md]
+unstructured[pdf]
 langchain_groq
 langchain_core
 fastembed
@@ -15,3 +15,10 @@ langchain_community
 streamlit
 langchain_experimental
 langchain_qdrant
+pytesseract
+sentence-transformers
+torch
+Pillow
+qdrant-client>=1.7.0
+python-dotenv
+pypdfium2

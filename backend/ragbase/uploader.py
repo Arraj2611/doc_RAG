@@ -9,8 +9,11 @@ from ragbase.config import Config
 def upload_files(
         files: List[UploadedFile], remove_old_files: bool = True
 ) -> List[Path]:
+    # Remove deletion of old Qdrant DB path
+    # if remove_old_files:
+    #     shutil.rmtree(Config.Path.DATABASE_DIR, ignore_errors=True)
+    # Keep deletion of temporary upload directory
     if remove_old_files:
-        shutil.rmtree(Config.Path.DATABASE_DIR, ignore_errors=True)
         shutil.rmtree(Config.Path.DOCUMENTS_DIR, ignore_errors=True)
     Config.Path.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
     file_paths = []
