@@ -6,6 +6,7 @@ import shutil
 
 from langchain_community.document_loaders import UnstructuredPDFLoader
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
