@@ -4,7 +4,7 @@ from typing import List
 from pathlib import Path
 import traceback
 
-from langchain.schema.runnable import RunnablePassthrough
+from langchain.schema.runnable import RunnablePassthrough, RunnableParallel
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -12,9 +12,16 @@ from langchain_core.runnables import Runnable
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.tracers.stdout import ConsoleCallbackHandler
 from langchain_core.vectorstores import VectorStoreRetriever
+from langchain_core.runnables import RunnableLambda
+from langchain_core.retrievers import BaseRetriever
+from langchain_community.chat_message_histories import ChatMessageHistory
+import weaviate
+from weaviate.classes.query import MetadataQuery, Filter
 
 from ragbase.config import Config
-from ragbase.session_history import get_session_history
+
+# --- Define store at module level --- 
+store = {}
 
 SYSTEM_PROMPT="""
 Utilize the provided contextual information to respond to the user question.
@@ -89,91 +96,140 @@ def format_docs(documents: List[Document]) -> str:
     print("--- End Final Context ---")
     return full_context if full_context else "No relevant context found."
 
-def create_chain(llm: BaseLanguageModel, retriever: VectorStoreRetriever) -> Runnable:
-    print("--- Entering create_chain (Restored History) ---")
+def get_session_history(session_id: str) -> ChatMessageHistory:
+    """Retrieves chat history for a session, creating it if necessary."""
+    if session_id not in store:
+        print(f"DEBUG get_session_history: Creating new history for session: {session_id}")
+        store[session_id] = ChatMessageHistory()
+    else:
+        print(f"DEBUG get_session_history: Retrieving existing history for session: {session_id}")
+    return store[session_id]
+
+# --- Weaviate Direct Retrieval Function --- 
+def retrieve_context_weaviate(input_dict: dict, client: weaviate.Client) -> List[Document]:
+    """Retrieves docs from Weaviate using nearText and converts to Document objects."""
+    query = input_dict["question"]
+    k = Config.Retriever.SEARCH_K
+    collection_name = Config.Database.WEAVIATE_INDEX_NAME
+    text_key = Config.Database.WEAVIATE_TEXT_KEY
+    attributes = ["source", "page", "doc_type", "element_index"] # Define attributes
+    
+    print(f"--- DEBUG retrieve_context_weaviate: Querying '{collection_name}' using nearText. Query: '{query[:50]}...' K={k}")
+    if not client:
+        print("ERROR retrieve_context_weaviate: Weaviate client is None!")
+        return []
+    try:
+        collection = client.collections.get(collection_name)
+        
+        # --- TEMPORARY DEBUG: Check if specific source exists --- 
+        if "sushant_report" in query.lower(): # Check if query mentions the report
+            try:
+                test_source = "sushant_report.docx"
+                print(f"--- DEBUG retrieve_context_weaviate: Testing filter for source='{test_source}' ---")
+                filter_response = collection.query.fetch_objects(
+                    filters=Filter.by_property("source").equal(test_source),
+                    limit=5
+                )
+                if filter_response.objects:
+                    print(f"--- DEBUG retrieve_context_weaviate: Found {len(filter_response.objects)} objects via filter for '{test_source}' ---")
+                    # Optional: Print content of first filtered object
+                    # print(f"    First object content: {filter_response.objects[0].properties.get(text_key, '')[:100]}...")
+                else:
+                    print(f"--- DEBUG retrieve_context_weaviate: Found NO objects via filter for '{test_source}' ---")
+            except Exception as filter_e:
+                print(f"--- DEBUG retrieve_context_weaviate: Error during filter test: {filter_e} ---")
+        # --- END TEMPORARY DEBUG ---
+                
+        response = collection.query.near_text(
+            query=query,
+            limit=k,
+            return_metadata=MetadataQuery(distance=True)
+        )
+        docs = []
+        if response.objects:
+            print(f"--- DEBUG retrieve_context_weaviate: Received {len(response.objects)} results via nearText.")
+            for i, obj in enumerate(response.objects):
+                metadata = {key: obj.properties.get(key) for key in attributes if key in obj.properties}
+                if obj.metadata and obj.metadata.distance is not None:
+                    metadata["distance"] = obj.metadata.distance
+                content = obj.properties.get(text_key, "")
+                docs.append(Document(page_content=content, metadata=metadata))
+                # Debug print source of each nearText result
+                print(f"    nearText Result #{i+1}: Source='{metadata.get('source')}', Distance={metadata.get('distance'):.4f}") 
+        else:
+            print("--- DEBUG retrieve_context_weaviate: Received 0 results via nearText.")
+        return docs
+    except Exception as e:
+        print(f"ERROR in retrieve_context_weaviate: {e}")
+        traceback.print_exc() # Print full traceback for errors here
+        return []
+
+def create_chain(llm: BaseLanguageModel, retriever: BaseRetriever | None, client: weaviate.Client | None) -> Runnable:
+    """Creates the RAG chain, using either FAISS retriever or direct Weaviate call."""
+    print("--- Entering create_chain --- ")
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),
-            MessagesPlaceholder("chat_history"),
+            MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{question}")
         ]
     )
     print("DEBUG create_chain: Prompt created.")
 
-    core_chain = (
-        RunnablePassthrough.assign(
-            context = itemgetter("question")
-            | retriever.with_config({"run_name": "context_retriever"})
-            | format_docs
-        ).with_config({"run_name": "context_fetcher"})
-        | prompt.with_config({"run_name": "prompt_formatter"})
-        | llm.with_config({"run_name": "llm_call"})
-    )
-    print(f"DEBUG create_chain: Core chain created: {type(core_chain)}")
+    # --- Define document retrieval step conditionally --- 
+    if Config.USE_LOCAL_VECTOR_STORE:
+        if retriever is None:
+             raise ValueError("FAISS retriever is required for local mode but not provided.")
+        print("Using FAISS retriever for context retrieval.")
+        # Use the provided FAISS retriever object
+        retrieve_docs_step = retriever.with_config({"run_name": "faiss_retriever"})
+    else:
+        if client is None:
+             raise ValueError("Weaviate client is required for remote mode but not provided.")
+        print("Using direct Weaviate call for context retrieval.")
+        # Use a lambda with the client to call our new function
+        retrieve_docs_step = RunnableLambda(lambda x: retrieve_context_weaviate(x, client=client), name="weaviate_retriever")
+    
+    # --- Core RAG Chain Structure --- 
+    core_rag_chain = (
+        # Step 1
+        RunnableParallel(
+            {
+                "docs": retrieve_docs_step,
+                "question": itemgetter("question"), 
+                "chat_history": itemgetter("chat_history")
+            }
+        )
+        # Step 2
+        | RunnablePassthrough.assign(
+            context=lambda x: format_docs(x["docs"]), 
+            source_documents=itemgetter("docs") 
+        ).with_config({"run_name": "context_formatter"})
+        # Step 3
+        | RunnableParallel(
+            {
+                "source_documents": itemgetter("source_documents"), 
+                "answer": (
+                    prompt.with_config({"run_name": "prompt_formatter"})
+                    | RunnableLambda(lambda prompt_obj: print(f"--- DEBUG create_chain: Final Prompt Sent to LLM ---\n{prompt_obj}\n--- End Final Prompt ---") or prompt_obj, name="DebugPrompt")
+                    | llm.with_config({"run_name": "llm_call"})
+                    | RunnableLambda(lambda llm_output: print(f"--- DEBUG create_chain: LLM Output Received ---\n{llm_output}\n--- End LLM Output ---") or llm_output, name="DebugLLMOutput")
+                )
+            }
+        )
+    ).with_config({"run_name": "core_rag_chain"})
+    print(f"DEBUG create_chain: Core RAG chain created: {type(core_rag_chain)}")
 
     print("DEBUG create_chain: Wrapping chain with history...")
-    chain_with_history = RunnableWithMessageHistory(
-        core_chain,
-        get_session_history,
-        input_messages_key='question',
-        history_messages_key='chat_history',
-    ).with_config({"run_name":"chain_with_history"})
-    print(f"DEBUG create_chain: Chain with history created: {type(chain_with_history)}")
-    return chain_with_history
+    # Wrap the core chain with history management
+    chain_with_message_history = RunnableWithMessageHistory(
+        core_rag_chain, 
+        get_session_history, 
+        input_messages_key="question",
+        history_messages_key="chat_history",
+        output_messages_key="answer" # LLM output is in the 'answer' key
+    ).with_config({"run_name":"chain_with_message_history"})
+    print(f"DEBUG create_chain: Chain with history created: {type(chain_with_message_history)}")
 
-async def ask_question(chain: Runnable, question: str, session_id: str):
-    print("\n--- Entering ask_question (Filtering streams) ---")
-    print(f"DEBUG: Received question: {question}")
-    documents_to_yield = []
-    try:
-        async for event in chain.astream_events(
-            {"question": question},
-            config={
-                "callbacks": [ConsoleCallbackHandler()] if Config.DEBUG else [],
-                "configurable": {"session_id": session_id},
-            },
-            version="v2",
-        ):
-            event_type = event['event']
-            event_name = event['name']
-            event_data = event.get("data", {})
-            event_tags = event.get("tags", [])
+    return chain_with_message_history
 
-            print(f"DEBUG ask_question: Event='{event_type}', Name='{event_name}', Tags='{event_tags}', Data Keys='{list(event_data.keys())}'")
-
-            if event_type == "on_retriever_end" and event_name == "context_retriever":
-                output = event_data.get("output", {})
-                if isinstance(output, dict) and "documents" in output:
-                    documents_to_yield = output["documents"]
-                    print(f"DEBUG ask_question: Captured {len(documents_to_yield)} documents from retriever.")
-                elif isinstance(output, list):
-                    documents_to_yield = output
-                    print(f"DEBUG ask_question: Captured {len(documents_to_yield)} documents directly from retriever list.")
-                else:
-                    print(f"WARNING ask_question: Unexpected retriever output structure for documents: {type(output)}")
-                yield documents_to_yield
-
-            if event_type == "on_chat_model_stream" and event_name == "llm_call":
-                chunk = event_data.get("chunk")
-                if chunk and hasattr(chunk, 'content'):
-                     content_chunk = chunk.content
-                     if isinstance(content_chunk, str):
-                         print(f"DEBUG ask_question: Yielding LLM content chunk: '{repr(content_chunk)}'")
-                         yield content_chunk
-                     else:
-                         print(f"WARNING ask_question: LLM chunk content was not a string: {type(content_chunk)}")
-                else:
-                    print(f"WARNING ask_question: LLM chunk event missing chunk or content: {chunk}")
-            elif event_type == "on_chain_stream" and event_name == "RunnableLambda" and "format_docs" in event_tags:
-                print(f"DEBUG ask_question: Skipping yield for intermediate formatted context.")
-            elif event_type == "on_chain_stream" and "core_chain" in event_tags:
-                print(f"DEBUG ask_question: Skipping yield for other intermediate chain stream event: Name='{event_name}'")
-
-        print(f"DEBUG ask_question: Finished streaming events. Total documents captured: {len(documents_to_yield)}")
-
-    except Exception as e:
-        print(f"ERROR ask_question: An error occurred during streaming: {e}")
-        traceback.print_exc()
-        yield "[Error during processing]"
-    finally:
-        print("--- Exiting ask_question (Filtering streams) ---")

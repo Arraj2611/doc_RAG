@@ -3,12 +3,14 @@ import asyncio
 import os # Added for path joining, potentially
 from pathlib import Path # Added for type hint if needed
 import traceback # Import traceback
+# import time # Remove time import
 
 from dotenv import load_dotenv
 from langchain_core.vectorstores import VectorStoreRetriever # Add this import
+from langchain_core.documents import Document # Ensure Document is imported
 # from qdrant_client import QdrantClient # Re-import QdrantClient
 
-from ragbase.chain import ask_question, create_chain
+from ragbase.chain import create_chain # Keep create_chain
 from ragbase.config import Config
 from ragbase.ingestor import Ingestor
 from ragbase.model import create_llm
@@ -80,98 +82,6 @@ def build_qa_chain(_files_to_process):
     st.success("RAG Chain Ready (using FAISS)!") # Log change
     return create_chain(llm, retriever)
 
-# --- Revert ask_chain to handle streaming --- 
-async def ask_chain(question: str, chain):
-    print("\n--- Entering ask_chain (app.py - Restored streaming) ---") # Updated print
-    full_response = ""
-    if not chain:
-         st.error("RAG Chain is not available. Cannot process question.")
-         print("DEBUG ask_chain: Chain object is None.")
-         return
-
-    assistant = st.chat_message("assistant", avatar="🤖")
-    with assistant:
-        message_placeholder = st.empty()
-        try:
-            message_placeholder.status("Thinking...", state="running")
-            documents = []
-            source_documents_processed = False
-
-            print("DEBUG ask_chain: Starting to iterate ask_question events (expecting streams)...") # Updated print
-            async for event in ask_question(chain, question, session_id="session-id--42"):
-                print(f"DEBUG ask_chain: Received event of type: {type(event)}")
-                if isinstance(event, str): # Handle streaming content chunks
-                    full_response += event
-                    message_placeholder.markdown(full_response + "▌")
-                    print(f"DEBUG ask_chain: Appended chunk, response length: {len(full_response)}")
-                elif isinstance(event, list) and not source_documents_processed: # Handle documents list
-                     documents = event # Assign directly
-                     source_documents_processed = True
-                     print(f"DEBUG ask_chain: Received {len(documents)} documents.")
-                     if documents:
-                         print(f"DEBUG ask_chain: First doc metadata keys: {list(documents[0].metadata.keys()) if documents[0].metadata else 'None'}")
-                elif isinstance(event, dict):
-                     print(f"DEBUG ask_chain: Received unexpected dict event (ignoring): {event}")
-                     pass
-                else:
-                    print(f"WARNING ask_chain: Received unexpected event type: {type(event)}")
-
-            print("DEBUG ask_chain: Finished iterating ask_question events.")
-
-            # --- Restore final markdown update --- 
-            message_placeholder.markdown(full_response) # Final response without cursor
-            # --- End restore --- 
-
-            # --- Restore source display ---
-            if documents:
-                print(f"DEBUG ask_chain: Displaying {len(documents)} sources.")
-                st.markdown("---")
-                st.subheader("Sources:")
-                cols = st.columns(len(documents) if len(documents) <= 3 else 3)
-                for i, doc in enumerate(documents):
-                     print(f"DEBUG ask_chain: Processing source #{i+1}, metadata: {doc.metadata}")
-                     with cols[i % len(cols)]:
-                         with st.expander(f"Source #{i+1}", expanded=False):
-                            doc_type = doc.metadata.get("doc_type", "unknown")
-                            source = doc.metadata.get("source", "N/A")
-                            source_name = Path(source).name if source != "N/A" else "N/A"
-
-                            if doc_type == "image":
-                                try:
-                                    if source != "N/A" and Path(source).is_file():
-                                        st.image(source, caption=f"Source: {source_name}")
-                                    else:
-                                        st.warning(f"Could not load image source: {source}")
-                                        st.write(f"Content: {doc.page_content}")
-                                except Exception as e:
-                                    st.error(f"Error displaying image {source}: {e}")
-                            elif doc_type == "text":
-                                st.write(doc.page_content)
-                                page = doc.metadata.get("page", None)
-                                page_info = f", Page: {page+1}" if page is not None else ""
-                                st.caption(f"Source: {source_name}{page_info}")
-                            else:
-                                st.write(doc.page_content)
-                                st.caption(f"Source: {source_name}")
-            else:
-                print("DEBUG ask_chain: No documents received to display as sources.")
-            # --- End restore source display --- 
-
-        except Exception as e:
-             print(f"ERROR ask_chain: An error occurred: {e}")
-             traceback.print_exc()
-             st.error(f"An error occurred while processing the question: {e}")
-             message_placeholder.markdown("Sorry, I encountered an error.")
-             full_response = "[Error]"
-
-    # Append response if no error
-    if full_response != "[Error]" and full_response.strip() != "[No response received]": # Adjusted condition
-         st.session_state.messages.append({'role': 'assistant', 'content': full_response})
-    elif full_response == "[No response received]":
-          st.error("Processing finished but no response was generated.")
-
-    print("--- Exiting ask_chain (app.py - Restored streaming) ---") # Updated print
-
 def show_upload_and_process():
     """Handles file upload and triggers chain building. Returns True if successful."""
     st.header("Multimodal RAG Base")
@@ -211,28 +121,102 @@ def show_message_history():
                 st.markdown(message["content"])
 
 def show_chat_input(chain):
-    # Display chat input widget
+    """Displays chat input, handles streaming invocation, and shows sources."""
     if prompt := st.chat_input("Ask your question here"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar="👨"):
             st.markdown(prompt)
-        if chain:
-            print(f"DEBUG show_chat_input: Chain object type: {type(chain)}.")
-            # --- Add prints around asyncio.run ---
-            print("DEBUG show_chat_input: BEFORE calling asyncio.run(ask_chain)...")
+            
+        if not chain:
+            print("DEBUG show_chat_input: Chain object is None. Cannot invoke.")
+            st.error("RAG Chain not initialized. Please upload and process documents.")
+            return
+
+        print(f"DEBUG show_chat_input: Chain object type: {type(chain)}.")
+        
+        assistant = st.chat_message("assistant", avatar="🤖")
+        with assistant:
+            message_placeholder = st.empty()
+            message_placeholder.status("Thinking...", state="running")
+            full_response = ""
+            sources = []
             try:
-                asyncio.run(ask_chain(prompt, chain))
-                print("DEBUG show_chat_input: AFTER calling asyncio.run(ask_chain) (Completed).")
+                session_id = "streamlit_session_1" 
+                print(f"DEBUG show_chat_input: Streaming chain with question and config (session_id={session_id})...")
+                
+                # --- Iterate over the stream (LLM should stream now) --- 
+                for chunk_index, chunk in enumerate(chain.stream(
+                    {"question": prompt},
+                    config={"configurable": {"session_id": session_id}}
+                )):
+                    # --- DEBUG --- 
+                    print(f"--- DEBUG Chunk #{chunk_index} --- Type: {type(chunk)}")
+                    if isinstance(chunk, dict):
+                        print(f"Keys: {list(chunk.keys())}")
+                    else:
+                        print(f"Content: {chunk}")
+                    print("-------------------------")
+                    # --- END DEBUG --- 
+
+                    # --- Extract Content Chunks (Reverted) --- 
+                    # Expect AIMessageChunk in the "answer" field
+                    content_chunk = None
+                    if isinstance(chunk, dict):
+                        answer_part = chunk.get("answer")
+                        if answer_part and hasattr(answer_part, 'content'): # AIMessageChunk
+                            content_chunk = answer_part.content
+                    
+                    if content_chunk:
+                        full_response += content_chunk
+                        message_placeholder.markdown(full_response + "▌")
+                        
+                    # --- Extract Source Documents --- 
+                    if isinstance(chunk, dict):
+                         potential_sources = chunk.get("source_documents") 
+                         if isinstance(potential_sources, list) and all(isinstance(doc, Document) for doc in potential_sources):
+                            if not sources: 
+                                sources = potential_sources
+                                print(f"DEBUG show_chat_input: Captured {len(sources)} sources from 'source_documents' key.")
+                
+                # --- Final Display & History Update --- 
+                message_placeholder.markdown(full_response) # Display final complete answer
+                if full_response:
+                     st.session_state.messages.append({'role': 'assistant', 'content': full_response})
+                else:
+                    message_placeholder.error("Sorry, I couldn't generate a response.")
+
+                # --- Display Sources (Restored) --- 
+                if sources:
+                    print(f"DEBUG show_chat_input: Displaying {len(sources)} sources.")
+                    st.markdown("---")
+                    st.subheader("Sources:")
+                    cols = st.columns(len(sources) if len(sources) <= 3 else 3)
+                    for i, doc in enumerate(sources):
+                        print(f"DEBUG show_chat_input: Processing source #{i+1}, metadata: {doc.metadata}")
+                        with cols[i % len(cols)]:
+                            with st.expander(f"Source #{i+1}", expanded=False):
+                                doc_type = doc.metadata.get("doc_type", "text")
+                                source = doc.metadata.get("source", "N/A")
+                                source_name = Path(source).name if source != "N/A" else "N/A"
+                                if doc_type == "text":
+                                    st.write(doc.page_content)
+                                    page = doc.metadata.get("page", None)
+                                    elem_idx = doc.metadata.get("element_index", None)
+                                    page_info = f", Page: {page+1}" if page is not None else ""
+                                    elem_info = f", Element: {elem_idx}" if elem_idx is not None else ""
+                                    st.caption(f"Source: {source_name}{page_info}{elem_info}")
+                                else:
+                                    st.write(doc.page_content)
+                                    st.caption(f"Source: {source_name}")
+                else:
+                    print("DEBUG show_chat_input: No sources captured from stream to display.")
+                # --- End Display Sources --- 
+
             except Exception as e:
-                 print(f"ERROR show_chat_input: Exception during asyncio.run(ask_chain): {e}")
-                 import traceback
+                 print(f"ERROR show_chat_input: Exception during chain processing: {e}") # Updated log
                  traceback.print_exc()
-                 # Display error in UI as well if asyncio.run fails critically
                  st.error(f"Critical error executing request: {e}")
-            # --- End prints ---
-        else:
-            print("DEBUG show_chat_input: Chain object is None. Cannot call ask_chain.")
-            st.error("RAG Chain not initialized. Please upload documents.")
+                 message_placeholder.error("Sorry, I encountered an error.")
 
 
 # --- Main App Logic ---

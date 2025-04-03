@@ -28,6 +28,21 @@ from ragbase.config import Config
 #         # raise NotImplementedError("OllamaEmbeddings does not support embed_images")
 #         pass 
 
+# Add back create_embeddings function
+def create_embeddings() -> Embeddings:
+    print(f"Creating OllamaEmbeddings with model '{Config.Model.OLLAMA_EMBEDDING_MODEL}'")
+    try:
+        embeddings = OllamaEmbeddings(
+            model=Config.Model.OLLAMA_EMBEDDING_MODEL,
+            base_url=Config.Model.OLLAMA_BASE_URL
+        )
+        # Optional: Test connection?
+        # embeddings.embed_query("test") 
+        print("OllamaEmbeddings created successfully.")
+        return embeddings
+    except Exception as e:
+        print(f"ERROR: Failed to create OllamaEmbeddings. Ensure Ollama is running at {Config.Model.OLLAMA_BASE_URL} and the model '{Config.Model.OLLAMA_EMBEDDING_MODEL}' is pulled. Error: {e}")
+        raise
 
 def create_llm() -> BaseLanguageModel:
     if Config.Model.USE_LOCAL:
@@ -38,32 +53,19 @@ def create_llm() -> BaseLanguageModel:
             max_tokens=Config.Model.MAX_TOKENS,
         )
     else:
-        return ChatGroq(
-            temperature=Config.Model.TEMPERATURE,
-            model=Config.Model.REMOTE_LLM,
-            max_tokens=Config.Model.MAX_TOKENS,
-            api_key=os.environ.get("GROQ_API_KEY")
-        )
-
-
-def create_embeddings() -> Embeddings:
-    print("Creating OllamaEmbeddings with model 'nomic-embed-text'")
-    # Assuming Ollama runs on the default localhost:11434
-    # Add error handling or configuration for base_url if needed
-    try:
-        embeddings = OllamaEmbeddings(
-            model='nomic-embed-text', 
-            base_url="http://localhost:11434" # As seen in try.ipynb
-        )
-        # Optional: Test connection during creation
-        # embeddings.embed_query("test") 
-        print("OllamaEmbeddings created successfully.")
-        return embeddings
-    except Exception as e:
-        print(f"ERROR: Failed to create OllamaEmbeddings. Ensure Ollama is running and the model 'nomic-embed-text' is pulled. Error: {e}")
-        raise
-
-
-def create_reranker() -> FlashrankRerank:
-    return FlashrankRerank(model=Config.Model.RERANKER)
+        print("Creating Groq LLM...")
+        try:
+            llm = ChatGroq(
+                temperature=Config.Model.TEMPERATURE,
+                model_name=Config.Model.REMOTE_LLM,
+                max_tokens=Config.Model.MAX_TOKENS,
+                streaming=True
+            )
+            # Optional: Test connection/authentication if possible
+            # llm.invoke("test") 
+            print(f"Groq LLM created successfully (Model: {Config.Model.REMOTE_LLM})")
+            return llm
+        except Exception as e:
+            print(f"ERROR: Failed to create Groq LLM. Ensure Groq is running and the model '{Config.Model.REMOTE_LLM}' is pulled. Error: {e}")
+            raise
 
