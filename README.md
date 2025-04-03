@@ -151,7 +151,7 @@ Access the application through the URL provided by the React development server 
 
 ## ✅ Project Status & Task List
 
-*(Scratch items indicate completed tasks)*
+(Scratch items indicate completed tasks)
 
 ### Core RAG Backend (Python/FastAPI - `backend/`)
 
