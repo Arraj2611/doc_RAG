@@ -6,7 +6,7 @@ load_dotenv()
 
 class Config:
     # --- Control Flags ---
-    USE_LOCAL_VECTOR_STORE = False # Set to False for Weaviate
+    USE_LOCAL_VECTOR_STORE = False # Set to False to use Weaviate instead of local FAISS
     DEBUG = False
     CONVERSATION_MESSAGE_LIMIT = 6
 
@@ -36,7 +36,7 @@ class Config:
         REMOTE_LLM = "llama-3.3-70b-versatile"
         TEMPERATURE = 0.4
         MAX_TOKENS = 8000
-        USE_LOCAL = False
+        USE_LOCAL = True # Use local LLM instead of remote
     
     class Retriever:
         # These are used for both FAISS and Weaviate retrievers

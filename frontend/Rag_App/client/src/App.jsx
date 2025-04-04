@@ -1,104 +1,69 @@
-// // import React from "react";
-// // import {
-// //   BrowserRouter as Router,
-// //   Route,
-// //   Routes,
-// //   Navigate,
-// // } from "react-router-dom";
-// // import Register from "./components/Register/Register";
-// // import Login from "./components/Login/Login";
-// // import Sidebar from "./components/Sidebar/Sidebar"; // Import Sidebar
-// // import { ToastContainer } from "react-toastify";
-// // import "react-toastify/dist/ReactToastify.css";
-
-// // const App = () => {
-// //   return (
-
-// //     <Router>
-// //       <Routes>
-// //         <Route path="/" element={<Login />} />
-// //         <Route path="/login" element={<Login />} />
-// //         <Route path="/sidebar" element={<Sidebar />} />
-// //         <Route path="/register" element={<Register />} />
-// //         <Route path="*" element={<Navigate to="/" />} />
-// //       </Routes>
-// //       <ToastContainer />
-// //     </Router>
-
-// //   );
-// // };
-
-// // export default App;
-
-// import React from "react";
-// import {
-//   BrowserRouter as Router,
-//   Route,
-//   Routes,
-//   Navigate,
-// } from "react-router-dom";
-// import Register from "./components/Register/Register";
-// import Login from "./components/Login/Login";
-// import Sidebar from "./components/Sidebar/Sidebar";
-// import Main from "./components/Main/Main";
-// import { ToastContainer } from "react-toastify";
-// import "react-toastify/dist/ReactToastify.css";
-
-// const App = () => {
-//   return (
-//     <Router>
-//       <Routes>
-//         <Route path="/" element={<Login />} />
-//         <Route path="/login" element={<Login />} />
-//         <Route path="/sidebar" element={<Sidebar />} />
-//         <Route path="/register" element={<Register />} />
-//         <Route path="*" element={<Navigate to="/" />} />
-//       </Routes>
-//       <ToastContainer />
-//       <Main/>
-//     </Router>
-//   );
-// };
-
-// export default App;
-
-import React from "react";
+import React, { useContext } from "react";
 import {
-  BrowserRouter as Router,
   Route,
   Routes,
   Navigate,
+  Outlet // Import Outlet for nested routes
 } from "react-router-dom";
 import Register from "./components/Register/Register";
 import Login from "./components/Login/Login";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Main from "./components/Main/Main";
+import LandingPage from "./components/LandingPage/LandingPage"; // Import LandingPage
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { Context } from "./context/Context"; // Import main context
+
+// Layout component for the main app (Sidebar + Main)
+const AppLayout = () => {
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh' }}> {/* Basic layout styling */}
+      <Sidebar />
+      <Main /> {/* Main content will render here */}
+    </div>
+  );
+};
+
+// Wrapper for protected routes
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated } = useContext(Context);
+  if (!isAuthenticated) {
+    // Redirect them to the /login page, but save the current location they were
+    // trying to go to when they were redirected.
+    return <Navigate to="/login" replace />;
+  }
+  return children ? children : <Outlet />; // Render children or Outlet for nested routes
+};
 
 const App = () => {
+  // Get auth state directly if needed, but ProtectedRoute handles logic
+  // const { isAuthenticated } = useContext(Context);
+
   return (
-    <Router>
-      <ToastContainer />
+    <>
+      <ToastContainer theme="colored" /> {/* Use theme based on body class */}
       <Routes>
-        <Route path="/" element={<Login />} />
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Sidebar route */}
-        <Route path="/sidebar" element={<Sidebar />}>
-          <Route path="main" element={<Main />} />
+        {/* Protected App Route using Wrapper */}
+        <Route element={<ProtectedRoute />}> {/* Wrap routes that need auth */}
+          <Route
+            path="/app"
+            element={<AppLayout />}
+          >
+            {/* Nested routes within /app if needed later */}
+          </Route>
+          {/* Add other protected routes here if necessary */}
+          {/* <Route path="/settings" element={<SettingsPage />} /> */}
         </Route>
 
-        {/* Redirect for undefined routes */}
+        {/* Redirect any other unknown paths to landing page */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
-
-      {/* Only render Main component if on the sidebar page */}
-      <Routes>
-        <Route path="/sidebar/*" element={<Main />} />
-      </Routes>
-    </Router>
+    </>
   );
 };
 

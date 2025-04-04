@@ -45,27 +45,23 @@ def create_embeddings() -> Embeddings:
         raise
 
 def create_llm() -> BaseLanguageModel:
-    if Config.Model.USE_LOCAL:
-        return ChatOllama(
-            model=Config.Model.LOCAL_LLM,
+    # Always use Groq
+    print("Creating Groq LLM...")
+    try:
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable not set")
+            
+        llm = ChatGroq(
+            api_key=api_key,
             temperature=Config.Model.TEMPERATURE,
-            keep_alive="1h",
+            model_name="llama3-8b-8192",  # Hardcoded to a reliable model
             max_tokens=Config.Model.MAX_TOKENS,
+            streaming=True
         )
-    else:
-        print("Creating Groq LLM...")
-        try:
-            llm = ChatGroq(
-                temperature=Config.Model.TEMPERATURE,
-                model_name=Config.Model.REMOTE_LLM,
-                max_tokens=Config.Model.MAX_TOKENS,
-                streaming=True
-            )
-            # Optional: Test connection/authentication if possible
-            # llm.invoke("test") 
-            print(f"Groq LLM created successfully (Model: {Config.Model.REMOTE_LLM})")
-            return llm
-        except Exception as e:
-            print(f"ERROR: Failed to create Groq LLM. Ensure Groq is running and the model '{Config.Model.REMOTE_LLM}' is pulled. Error: {e}")
-            raise
+        print(f"Groq LLM created successfully (Model: llama3-8b-8192)")
+        return llm
+    except Exception as e:
+        print(f"ERROR: Failed to create Groq LLM: {e}")
+        raise
 

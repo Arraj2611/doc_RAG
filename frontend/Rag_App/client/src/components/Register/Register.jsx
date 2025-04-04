@@ -1,7 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Link } from "react-router-dom";
+import "./Register.css";
+import { Context } from "../../context/Context";
+import { useNavigate } from "react-router-dom";
 
 const Register = () => {
   const [userDetails, setUserDetails] = useState({
@@ -10,7 +13,8 @@ const Register = () => {
     password: "",
     age: "",
   });
-
+  const { register } = useContext(Context);
+  const navigate = useNavigate();
 
   const handleInput = (event) => {
     setUserDetails((prevState) => ({
@@ -19,12 +23,10 @@ const Register = () => {
     }));
   };
 
-  // Handle form submission
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     try {
-      // Send a POST request to the registration endpoint
       const response = await fetch("http://localhost:7000/api/auth/register", {
         method: "POST",
         body: JSON.stringify(userDetails),
@@ -33,71 +35,79 @@ const Register = () => {
         },
       });
 
-      // Parse the JSON response
       const data = await response.json();
 
       if (response.ok) {
-        // Show success toast notification
         toast.success(data.message);
-
-        // Reset the user details state
         setUserDetails({
           name: "",
           email: "",
           password: "",
           age: "",
         });
+        register(userDetails.name, userDetails.email, userDetails.password);
+        navigate("/app", { state: { toastMessage: data.message } });
       } else {
-        // Show error toast notification with message from response
         toast.error(data.message);
       }
     } catch (err) {
-      console.log(err);
-      // Show error toast notification
-      toast.error("Registration failed. Please try again.");
+      console.log("Registration error:", err);
+      // In case of a connection error, use the mock register function
+      toast.info("Using demo mode registration (backend unavailable)");
+      register(userDetails.name, userDetails.email, userDetails.password);
+      navigate("/app");
     }
   };
 
   return (
-    <section className="container">
-      <form className="form" onSubmit={handleSubmit}>
-        <h1>Register To Use</h1>
-        <input
-          className="inp"
-          type="text"
-          onChange={handleInput}
-          placeholder="Enter Your Name"
-          value={userDetails.name}
-          required
-          name="name"
-        />
-        <input
-          className="inp"
-          type="email"
-          onChange={handleInput}
-          placeholder="Enter Your Email"
-          value={userDetails.email}
-          required
-          name="email"
-        />
-        <input
-          className="inp"
-          type="password"
-          onChange={handleInput}
-          placeholder="Enter Your Password"
-          value={userDetails.password}
-          required
-          name="password"
-        />
-        <button className="btn" type="submit">
-          Register
+    <div className="register-container">
+      <form className="register-form" onSubmit={handleSubmit}>
+        <h2>Register To Use</h2>
+        <div className="input-group">
+          <label htmlFor="name">Name</label>
+          <input
+            type="text"
+            id="name"
+            placeholder="Enter your name"
+            value={userDetails.name}
+            onChange={handleInput}
+            required
+            name="name"
+          />
+        </div>
+        <div className="input-group">
+          <label htmlFor="email">Email</label>
+          <input
+            type="email"
+            id="email"
+            placeholder="Enter your email"
+            value={userDetails.email}
+            onChange={handleInput}
+            required
+            name="email"
+          />
+        </div>
+        <div className="input-group">
+          <label htmlFor="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            placeholder="Enter your password"
+            value={userDetails.password}
+            onChange={handleInput}
+            required
+            name="password"
+          />
+        </div>
+        <button type="submit" className="register-button">
+          REGISTER
         </button>
-        <p>
+        <p className="login-link">
           Already Registered? <Link to="/login">Login</Link>
         </p>
       </form>
       <ToastContainer />
-    </section>
+    </div>
   );
 };
 

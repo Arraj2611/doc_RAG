@@ -9,6 +9,10 @@ import os
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+# Import Element from unstructured
+from unstructured.partition.auto import partition 
+from unstructured.documents.elements import Element
 
 from ragbase.config import Config
 
@@ -16,6 +20,7 @@ from ragbase.config import Config
 import weaviate
 # Keep Auth import
 from weaviate.classes.init import Auth 
+from weaviate.collections.classes.data import DataObject
 
 # FAISS / Local imports
 from langchain_community.vectorstores import FAISS
@@ -97,8 +102,14 @@ class Ingestor:
         else:
             print("Ingestor: Initializing for REMOTE vector store (Weaviate).")
             if not self.client:
-                # This shouldn't happen if api.py logic is correct, but good practice
-                raise ValueError("Weaviate client must be provided when USE_LOCAL_VECTOR_STORE is False.")
+                # If Weaviate client is missing but we're configured for remote, switch to local
+                print("WARNING: Weaviate client not provided. Switching to local vector store mode.")
+                self.use_local = True
+                Config.USE_LOCAL_VECTOR_STORE = True
+                self.embedder = create_embeddings()
+                Config.Path.FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+                self.processed_hashes = load_processed_hashes(self.hash_file_path)
+                print(f"  Loaded {len(self.processed_hashes)} previously processed hashes.")
 
     def _load_and_split(self, doc_paths: List[Path]) -> List[Document]:
         docs_to_add = []
@@ -228,3 +239,47 @@ class Ingestor:
                  return False
 
         return success
+
+    def add_document_chunks(self, chunks: List[Element], document_hash: str, source: str, tenant_id: str):
+        collection_name = Config.Database.WEAVIATE_INDEX_NAME
+        text_key = Config.Database.WEAVIATE_TEXT_KEY
+        
+        if not self.client:
+             print("ERROR Ingestor: Weaviate client is None during add_document_chunks.")
+             raise ValueError("Weaviate client not initialized in Ingestor")
+        
+        try:
+            # Get the main collection object
+            collection = self.client.collections.get(collection_name)
+            # Get a tenant-specific interface
+            collection_tenant = collection.with_tenant(tenant_id) 
+            
+            objects_to_add = []
+            for i, chunk in enumerate(chunks):
+                metadata = chunk.metadata.to_dict()
+                metadata['doc_hash'] = document_hash
+                metadata['source'] = source
+                metadata['element_index'] = i 
+                
+                properties = {
+                    text_key: chunk.text,
+                    **metadata 
+                }
+                
+                objects_to_add.append(DataObject(properties=properties))
+            
+            if objects_to_add:
+                # Use the tenant-specific batch
+                with collection_tenant.batch.fixed_size() as batch:
+                    for obj in objects_to_add:
+                        batch.add_object(properties=obj.properties)
+                
+                print(f"Ingestor: Successfully added {len(objects_to_add)} chunks for source '{source}' to tenant '{tenant_id}' in '{collection_name}'.")
+                return len(objects_to_add)
+            else:
+                print(f"Ingestor: No chunks to add for source '{source}'.")
+                return 0
+        except Exception as e:
+            print(f"ERROR Ingestor add_document_chunks: Failed to add chunks for {source} to tenant '{tenant_id}'. Error: {e}")
+            traceback.print_exc()
+            raise # Re-raise the exception

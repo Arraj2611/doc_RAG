@@ -57,6 +57,12 @@ def build_qa_chain(_files_to_process):
 
     st.info(f"Starting ingestion & FAISS index creation for {len(file_paths)} file(s)...") # Log change
     # Create Ingestor instance - no client needed
+    from ragbase.config import Config
+    # Ensure USE_LOCAL_VECTOR_STORE is True to avoid Weaviate client requirement
+    if not Config.USE_LOCAL_VECTOR_STORE:
+        print("WARNING: Setting USE_LOCAL_VECTOR_STORE to True for Streamlit app")
+        Config.USE_LOCAL_VECTOR_STORE = True
+        
     ingestor = Ingestor()
     ingestion_successful = ingestor.ingest(file_paths)
 

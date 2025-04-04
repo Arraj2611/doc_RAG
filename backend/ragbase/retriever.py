@@ -7,8 +7,7 @@ from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
 from langchain_weaviate.vectorstores import WeaviateVectorStore
 import weaviate
 from weaviate.classes.init import Auth
-import os
-from ragbase.config import Config
+from .config import Config
 from dotenv import load_dotenv
 from fastapi import HTTPException
 from langchain_core.retrievers import BaseRetriever
@@ -17,22 +16,18 @@ from langchain_core.documents import Document
 # FAISS/Local imports
 from langchain_community.vectorstores import FAISS 
 from langchain_core.embeddings import Embeddings
-from ragbase.model import create_embeddings # Import local embedder
+import os
+# Use relative import for model
+from .model import create_embeddings 
 # Remove Weaviate-specific LC imports and custom class
-# from weaviate.classes.query import MetadataQuery
-# from weaviate.client import WeaviateClient 
+from weaviate.classes.query import MetadataQuery, Filter
 
 load_dotenv()
 
-# Remove the custom retriever class
-# class WeaviateRerankRetriever(BaseRetriever):
-#    ...
-
 # --- Updated create_retriever function (FAISS ONLY) --- 
-
 def create_retriever(
         llm: BaseLanguageModel, 
-        client: weaviate.Client | None = None # Keep for signature consistency? Or remove?
+        client: weaviate.Client | None = None # Keep for signature consistency
 ) -> BaseRetriever | None: # Return None if not local
     """Creates a retriever ONLY for the local FAISS setup."""
     
@@ -64,11 +59,10 @@ def create_retriever(
     else:
         # --- Weaviate Mode: No Retriever Object Needed Here --- 
         print("Retriever: Running in Weaviate mode. Retrieval handled directly in chain.")
-        # Remove Weaviate retriever creation logic
-        # Remove direct Weaviate test block
         return None # Signal that retrieval is handled elsewhere
 
-# Remove old code related to WeaviateVectorStore and FlashrankRerank
-# ... (old vector_store initialization) ...
-# ... (old retriever = vector_store.as_retriever(...)) ...
-# ... (old reranker check/wrapping) ...
+# Placeholder for direct Weaviate query logic if needed outside chain.py
+# async def query_weaviate_directly(client: weaviate.Client, tenant_id: str, query: str, k: int):
+#     collection = client.collections.get(Config.Database.WEAVIATE_INDEX_NAME).with_tenant(tenant_id)
+#     response = await collection.query.near_text_async(...) # Use async version if in async context
+#     return response 

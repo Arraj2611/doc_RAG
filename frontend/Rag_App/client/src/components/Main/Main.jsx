@@ -1,19 +1,103 @@
 // Main.jsx
-import React, { useContext } from "react";
+import React, { useContext, useState, useEffect, useRef } from "react";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import "./Main.css";
 import { assets } from "../../assets/assets";
 import { Context } from "../../context/Context";
 
+// Refined SourcesSidebar component
+const SourcesSidebar = ({ isOpen, sources, onClose }) => {
+  // Add the 'open' class dynamically based on the isOpen prop
+  const sidebarClass = isOpen ? "sources-sidebar open" : "sources-sidebar";
+
+  return (
+    <div className={sidebarClass}>
+      <button onClick={onClose} className="close-sidebar-btn" title="Close Sources">×</button>
+      <h3>Sources</h3>
+      <div className="sidebar-content">
+        {sources.map((source, index) => {
+          if (!source || !source.metadata) return (
+            <div key={index} className="sidebar-source-item error">
+              Source {index + 1}: Invalid data
+            </div>
+          );
+
+          const { content, metadata } = source;
+          const sourceName = metadata.source || 'Unknown Source';
+          const page = metadata.page !== undefined ? `Page: ${metadata.page}` : null;
+          const distance = metadata.distance !== undefined ? `Distance: ${metadata.distance.toFixed(4)}` : null;
+
+          return (
+            <div key={index} className="sidebar-source-item">
+              <h4>Source {index + 1}: {sourceName}</h4>
+              <div className="sidebar-source-meta">
+                {page && <span>{page}</span>}
+                {distance && <span>{distance}</span>}
+              </div>
+              <div className="sidebar-source-content">
+                {content || 'No content available'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// Helper component for displaying a single source
+const SourceDocument = ({ source }) => {
+  if (!source || !source.metadata) return null;
+
+  const { content, metadata } = source;
+  const sourceName = metadata.source || 'Unknown Source';
+  const page = metadata.page !== undefined ? `, Page: ${metadata.page}` : '';
+  const distance = metadata.distance !== undefined ? ` (Distance: ${metadata.distance.toFixed(4)})` : '';
+
+  return (
+    <div className="source-document">
+      <details>
+        <summary>
+          Source: {sourceName}{page}{distance}
+        </summary>
+        <div className="source-content">
+          {content || 'No content available'}
+        </div>
+      </details>
+    </div>
+  );
+};
+
 const Main = () => {
+  // Destructure values from Context
   const {
+    chatHistory,
+    currentSessionId,
     onSent,
-    recentPrompt,
-    showResult,
-    loading,
-    resultData,
     setInput,
     input,
+    loading,
+    currentTurnResult,
+    currentTurnSources,
+    showResult,
+    handleFileChange,  // Get from context
+    isUploading,       // Get from context
+    processUploadedFiles, // Get from context
+    lastUploadResult,    // Get from context
+    isProcessing,       // Get from context
+    theme               // Get theme from context
   } = useContext(Context);
+
+  // --- Define local state and refs AFTER context --- 
+  const [isSourcesSidebarOpen, setIsSourcesSidebarOpen] = useState(false);
+  const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  // -------------------------------------------------
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory, currentTurnResult]);
 
   return (
     <div className="main">
@@ -22,7 +106,8 @@ const Main = () => {
         <img src={assets.user_icon} alt="User icon" />
       </div>
       <div className="main-container">
-        {!showResult ? (
+        {/* Show welcome screen only if there's NO history for the current session */}
+        {!chatHistory || chatHistory.length === 0 ? (
           <>
             <div className="greet">
               <p>
@@ -50,47 +135,122 @@ const Main = () => {
             </div>
           </>
         ) : (
-          <div className="result">
-            <div className="result-title">
-              <img src={assets.user_icon} alt="User icon" />
-              <p>{recentPrompt}</p>
-            </div>
-            <div className="result-data">
-              <img src={assets.gemini_icon} alt="Gemini icon" />
-              {loading ? (
-                <div className="loader">
-                  <hr />
-                  <hr />
-                  <hr />
+          // Display chat history
+          <div className="chat-history">
+            {chatHistory.map((message, index) => (
+              <div key={index} className={`message ${message.role}`}>
+                <img src={message.role === 'user' ? assets.user_icon : assets.gemini_icon} alt={message.role} />
+                <div className="markdown-content">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
                 </div>
-              ) : (
-                <p dangerouslySetInnerHTML={{ __html: resultData }}></p>
-              )}
-            </div>
+              </div>
+            ))}
+
+            {/* Display the current assistant response while loading */}
+            {loading && (
+              <div className="message assistant">
+                <img src={assets.gemini_icon} alt="assistant" />
+                <div className="markdown-content">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentTurnResult}</ReactMarkdown>
+                  {/* Optional: Add a blinking cursor or indicator */}
+                  <span className="loading-cursor">▋</span>
+                </div>
+              </div>
+            )}
+
+            {/* Display sources button for the last completed turn */}
+            {!loading && currentTurnSources && currentTurnSources.length > 0 && (
+              <div className="sources-button-container">
+                <button
+                  className="sources-button"
+                  onClick={() => setIsSourcesSidebarOpen(true)}
+                >
+                  Sources ({currentTurnSources.length})
+                </button>
+              </div>
+            )}
+
+            {/* Empty div to act as scroll target */}
+            <div ref={chatEndRef} />
           </div>
         )}
 
+        {/* --- Render Sources Sidebar --- */}
+        <SourcesSidebar
+          isOpen={isSourcesSidebarOpen}
+          sources={currentTurnSources}
+          onClose={() => setIsSourcesSidebarOpen(false)}
+        />
+        {/* --- End Render Sources Sidebar --- */}
+
         <div className="main-bottom">
+          {/* --- Conditional Process Button --- */}
+          {lastUploadResult?.success && !isProcessing && (
+            <div className="process-trigger-container">
+              <button
+                className="process-button-main"
+                onClick={processUploadedFiles}
+                disabled={isProcessing}
+              >
+                Process {lastUploadResult.data?.filenames_saved?.length || 'Uploaded'} File(s)
+              </button>
+            </div>
+          )}
+          {/* --------------------------------- */}
+
           <div className="search-box">
+            {/* Hidden File Input - Moved Here */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              multiple
+              style={{ display: 'none' }}
+              accept=".pdf,.docx,.txt,.md"
+            />
+            {/* Input Field */}
             <input
               onChange={(e) => setInput(e.target.value)}
               value={input}
               type="text"
-              placeholder="Enter a prompt here"
+              placeholder="Enter a prompt here, or attach files..."
+              onKeyPress={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && input.trim()) {
+                  event.preventDefault();
+                  onSent(input);
+                }
+              }}
             />
+            {/* Input Icons */}
             <div>
-              <img src={assets.gallery_icon} alt="Gallery icon" />
-              <img src={assets.mic_icon} alt="Mic icon" />
+              {/* Upload Trigger Icon */}
               <img
-                onClick={() => onSent(input)} // Pass input to onSent
+                src={assets.gallery_icon}
+                alt="Attach Files"
+                title="Attach Files"
+                className={`input-icon ${isUploading ? 'disabled' : ''}`}
+                onClick={() => !isUploading && fileInputRef.current?.click()}
+              />
+              {/* Mic Icon (Functionality TBD) */}
+              <img
+                src={assets.mic_icon}
+                alt="Use Microphone"
+                title="Use Microphone"
+                className="input-icon"
+              />
+              {/* Send Icon */}
+              <img
+                onClick={() => input.trim() && !loading && onSent(input)}
+                className={`input-icon send-icon ${loading || !input.trim() ? 'disabled' : ''}`}
                 src={assets.send_icon}
-                alt="Send icon"
+                alt="Send"
+                title="Send Message"
               />
             </div>
           </div>
+          {/* Bottom Info */}
           <p className="bottom-info">
-            Gemini may display inaccurate info, including about people, so
-            double-check its response. Your privacy and Gemini Apps.
+            AI may display inaccurate info. Check responses.
           </p>
         </div>
       </div>
