@@ -1,0 +1,55 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");
+
+* {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: outfit;
+  scroll-behavior: smooth;
+}
+#root {
+  min-height: 100vh;
+  display: flex;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.full-height {
+  display: flex;
+  flex-direction: column;
+}
+
+.hide {
+  display: none; /* Class to hide content when needed */
+}
+
+:root {
+  --bg-page: #0f172a;
+  --bg-panel-left: #1e293b;
+  --bg-panel-right: #16202a;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --input-bg: #1e293b;
+  --input-border: #334155;
+  --input-placeholder: #94a3b8;
+  --btn-login: #22c55e; /* green button for login */
+  --btn-login-hover: #16a34a;
+  --btn-register: #6366f1; /* indigo for register */
+  --btn-register-hover: #4f46e5;
+  --link-color: #22d3ee;
+  --feature-upload: #22d3ee;
+  --feature-chat: #f1f5f9;
+  --feature-insights: #facc15;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  font-family: "Outfit", sans-serif;
+}

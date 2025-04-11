@@ -1,0 +1,146 @@
+.auth-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-box {
+  display: flex;
+  width: 90%;
+  max-width: 1000px;
+  background: #0000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.form-container {
+  flex: 1;
+  padding: 40px;
+  background: var(--bg-panel-left);
+}
+
+.form-container h2 {
+  display: flex;
+  align-items: center;
+  font-size: 28px;
+  margin: 0 0 8px;
+}
+.app-icon {
+  color: var(--feature-upload);
+  margin-right: 8px;
+}
+.form-container h3 {
+  margin: 0 0 24px;
+  color: var(--text-secondary);
+  font-size: 18px;
+}
+
+.form-container form {
+  display: flex;
+  flex-direction: column;
+}
+.form-container label {
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.form-container input {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.form-container input::placeholder {
+  color: var(--input-placeholder);
+}
+
+.btn-login {
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--btn-login);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-login:hover {
+  background: var(--btn-login-hover);
+}
+
+.switch {
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.switch a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+.switch a:hover {
+  text-decoration: underline;
+}
+
+/* —— Right panel (features) —— */
+.features-container {
+  flex: 1;
+  padding: 40px;
+  background: var(--bg-panel-right);
+}
+.features-container h3 {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+.features-container ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.features-container li {
+  display: flex;
+  margin-bottom: 24px;
+}
+.features-container li:last-child {
+  margin-bottom: 0;
+}
+.icon {
+  font-size: 24px;
+  margin-right: 16px;
+}
+.upload {
+  color: var(--feature-upload);
+}
+.chat {
+  color: var(--feature-chat);
+}
+.insight {
+  color: var(--feature-insights);
+}
+
+.features-container strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+.features-container p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* —— Responsive: stack on mobile —— */
+@media (max-width: 768px) {
+  .auth-box {
+    flex-direction: column;
+  }
+  .features-container {
+    display: none;
+  }
+}
