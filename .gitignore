@@ -3,3 +3,4 @@
 *.db
 *.pyc
 venv/
+*doc_rag/*

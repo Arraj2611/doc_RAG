@@ -17,6 +17,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
+from langchain_weaviate.vectorstores import WeaviateVectorStore # Needed for direct Weaviate retrieval
 
 from .config import Config
 from .model import create_embedding_model, create_embeddings

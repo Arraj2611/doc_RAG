@@ -10,7 +10,6 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseLanguageModel
 
 # Import specific implementations
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.chat_models import ChatOllama # For older Ollama integration
 from langchain_community.llms import Ollama # Newer interface for direct LLM
 from langchain_community.embeddings import OllamaEmbeddings
@@ -26,19 +25,7 @@ def create_llm() -> BaseLanguageModel:
     provider = Config.MODEL_PROVIDER.lower()
     logger.info(f"Creating LLM for provider: {provider}")
 
-    if provider == "openai":
-        if not Config.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY must be set in environment for OpenAI provider.")
-        llm = ChatOpenAI(
-            api_key=Config.OPENAI_API_KEY,
-            model=Config.OPENAI_MODEL_NAME,
-            temperature=Config.Model.TEMPERATURE,
-            max_tokens=Config.Model.MAX_TOKENS,
-            streaming=True # Enable streaming by default for Chat models
-        )
-        logger.info(f"Using OpenAI model: {Config.OPENAI_MODEL_NAME}")
-
-    elif provider == "ollama":
+    if provider == "ollama":
         # Using the newer direct Ollama LLM interface
         llm = Ollama(
             base_url=Config.OLLAMA_BASE_URL,
@@ -74,20 +61,6 @@ def create_embeddings() -> Embeddings:
     provider = Config.MODEL_PROVIDER.lower()
     logger.info(f"Attempting to create embedding model for primary provider: {provider}")
 
-    if provider == "openai":
-        if Config.OPENAI_API_KEY:
-            logger.info(f"Using OpenAI embeddings: {Config.OPENAI_EMBEDDING_MODEL_NAME}")
-            try:
-                return OpenAIEmbeddings(
-                    api_key=Config.OPENAI_API_KEY,
-                    model=Config.OPENAI_EMBEDDING_MODEL_NAME
-                )
-            except Exception as e:
-                logger.error(f"Failed to create OpenAI embeddings: {e}")
-                # Fall through to try other providers if configured
-        else:
-            logger.warning("OpenAI provider selected, but OPENAI_API_KEY is not set. Falling back...")
-
     if provider == "ollama" or provider == "groq": # Groq uses Ollama/OpenAI for embeddings
         # Try Ollama if it's the primary provider or if falling back from OpenAI/Groq
         logger.info(f"Attempting to use Ollama embeddings: {Config.OLLAMA_EMBEDDING_MODEL_NAME}")
@@ -107,16 +80,6 @@ def create_embeddings() -> Embeddings:
             # Otherwise (Groq or failed OpenAI), fall through to try OpenAI as last resort
 
     # Last resort: Try OpenAI embeddings if keys are set (could happen if Groq is provider)
-    if Config.OPENAI_API_KEY:
-        logger.warning(f"Falling back to OpenAI embeddings as last resort: {Config.OPENAI_EMBEDDING_MODEL_NAME}")
-        try:
-            return OpenAIEmbeddings(
-                api_key=Config.OPENAI_API_KEY,
-                model=Config.OPENAI_EMBEDDING_MODEL_NAME
-            )
-        except Exception as e:
-            logger.error(f"Failed to create OpenAI embeddings as fallback: {e}")
-            # No further fallbacks
     
     raise ValueError("Could not create embedding model. Check provider configuration and API keys/connections.")
 

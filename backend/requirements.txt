@@ -11,32 +11,37 @@ langchain
 langchain_core
 langchain_community
 
-# LLM Providers
+# LLM & Embedding Providers / Integrations
+langchain-openai # Added for OpenAI LLM/Embeddings
 langchain_groq # For Groq LLM
-langchain-ollama # Preferred for Ollama Embeddings
+langchain-ollama # Preferred for Ollama Embeddings/LLM
 
-# Vector Store - Specific versions to avoid circular imports
-weaviate-client
-langchain-weaviate
+# Vector Stores
+weaviate-client # Weaviate DB Client
+langchain-weaviate # Langchain integration for Weaviate
+faiss-cpu # Added for local FAISS vector store support (use faiss-gpu if applicable)
 
-# Loaders
+# Loaders & Document Processing
 unstructured[pdf,docx,md,eml,html,xml] # For document parsing
 python-magic-bin # Required by unstructured for file type detection on Windows
-pypdf2
-# Embeddings (Ollama is now primary, Sentence Transformers might be needed for future rerankers)
-# sentence-transformers # Keep if planning to use certain rerankers, otherwise removable
+pypdf2 # Still used for page count in routes
+
+# Supporting Libraries (Dependencies for above or potential future use)
+# sentence-transformers # Keep if planning to use certain rerankers
 torch # Often a dependency for sentence-transformers or faiss
+Pillow # Image handling for Unstructured/future use
 
-# Image Handling (Dependency for Unstructured or potential future use)
-Pillow
-
-# Reranker (Optional, currently disabled and potentially problematic)
+# Reranker (Optional, commented out)
 # flashrank
 
-# OCR (Optional, only if processing scanned images via Tesseract)
+# OCR (Optional, commented out)
 # pytesseract
 
-# Database
+# Database (MongoDB)
 pymongo
 motor # Async MongoDB driver
 beanie # ODM for MongoDB with FastAPI integration
+
+# Authentication / Security
+passlib[bcrypt] # For password hashing (if needed by auth.py, standard practice)
+python-jose[cryptography] # For JWT handling (if needed by auth.py)
