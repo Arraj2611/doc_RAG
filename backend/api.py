@@ -1,484 +1,167 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Request, BackgroundTasks, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+"""
+Main FastAPI application for the docRAG API.
+This module handles API routes, lifespan management (DB/client connections), and startup.
+"""
+import logging
 import uvicorn
 import os
-import shutil
-from pathlib import Path
-import traceback
-import asyncio
-from typing import List, Dict, Optional, Any, Annotated, AsyncGenerator, Set
 from contextlib import asynccontextmanager
-import weaviate
-from weaviate.classes.init import Auth
-from weaviate.classes.config import Property, DataType, Configure, Reconfigure
-from weaviate.classes.query import Filter
-from weaviate.collections.classes.tenants import Tenant
-from langchain_core.runnables import Runnable
-import json
-from fastapi.responses import StreamingResponse, JSONResponse
 
-# --- Relative Imports --- 
-try:
-    from ragbase.chain import create_chain, get_session_history 
-    from ragbase import ingest
-    from ragbase.config import Config 
-    from ragbase.retriever import create_retriever
-    from ragbase.model import create_llm
-    from ragbase.ingestor import load_processed_hashes, Ingestor
-except ImportError:
-    from .ragbase.chain import create_chain, get_session_history 
-    from .ragbase import ingest
-    from .ragbase.config import Config 
-    from .ragbase.retriever import create_retriever
-    from .ragbase.model import create_llm
-    from .ragbase.ingestor import load_processed_hashes, Ingestor
-# ------------------------
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-# --- Remove Global Variables --- 
-# weaviate_client: weaviate.Client | None = None 
-chain_instance: Runnable | None = None 
+# --- Logging Configuration --- 
+# Configure logging early, before other imports if possible
+log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_str, logging.INFO)
 
-# --- Add the missing get_weaviate_client function ---
-def get_weaviate_client():
-    """Dependency to get the Weaviate client from app.state."""
-    from fastapi import Request
-    
-    async def get_client(request: Request):
-        return request.app.state.weaviate_client
-        
-    return get_client
-# ----------------------------------------------------
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+# Silence overly verbose libraries
+logging.getLogger("uvicorn.error").propagate = False
+logging.getLogger("uvicorn.access").propagate = False
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+logger.info(f"Logging configured with level: {log_level_str}")
+# --- End Logging Configuration --- 
+
+# Import routes AFTER logging is configured
+from routes.auth import router as auth_router
+from routes.documents import router as documents_router
+from routes.chat import router as chat_router
+from routes.preferences import router as preferences_router
+
+# Import config and lifespan functions
+from ragbase.config import Config
+from ragbase.weaviate_client import setup_weaviate_client, close_weaviate_client
+from db import init_mongodb, close_mongodb # Import DB init/close
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Use app.state for client
-    app.state.weaviate_client = None 
-    if not Config.USE_LOCAL_VECTOR_STORE:
-        print("Initializing Weaviate client at application startup (Remote Mode)...")
-        if not Config.Database.WEAVIATE_URL or not Config.Database.WEAVIATE_API_KEY:
-            print("ERROR: WEAVIATE_URL and WEAVIATE_API_KEY must be set for Weaviate mode.")
-        else:
-            try:
-                # --- Use Weaviate v4 client API ---
-                client_instance = weaviate.connect_to_wcs(
-                    cluster_url=Config.Database.WEAVIATE_URL,
-                    auth_credentials=Auth.api_key(Config.Database.WEAVIATE_API_KEY),
-                )
-                print("Weaviate client connected and ready.")
-                app.state.weaviate_client = client_instance
-                # ---------------------------
-                
-                # --- Schema Check / Update logic using v4 API ---
-                collection_name = Config.Database.WEAVIATE_INDEX_NAME
-                text_key = Config.Database.WEAVIATE_TEXT_KEY
-                
-                # Check if collection exists
-                if not client_instance.collections.exists(collection_name):
-                    print(f"Weaviate collection '{collection_name}' not found. Creating with Multi-Tenancy enabled...")
-                    
-                    # Create collection with v4 API
-                    client_instance.collections.create(
-                        name=collection_name,
-                        description="Stores document chunks for RAG (Multi-Tenant)",
-                        properties=[
-                            Property(name=text_key, data_type=DataType.TEXT, description="Content chunk"),
-                            Property(name="source", data_type=DataType.TEXT, description="Document source filename"),
-                            Property(name="page", data_type=DataType.INT, description="Page number"),
-                            Property(name="doc_type", data_type=DataType.TEXT, description="Document type"),
-                            Property(name="element_index", data_type=DataType.INT, description="Index of element on page"),
-                            Property(name="doc_hash", data_type=DataType.TEXT, description="Hash of the original document"),
-                        ],
-                        vectorizer_config=Configure.Vectorizer.none(),
-                        multi_tenancy_config=Configure.multi_tenancy(
-                            enabled=True,
-                            auto_tenant_creation=True
-                        )
-                    )
-                    print(f"Weaviate collection '{collection_name}' created successfully.")
-                else:
-                    print(f"Weaviate collection '{collection_name}' already exists.")
-                    # Check if multi-tenancy is enabled
-                    try:
-                        collection = client_instance.collections.get(collection_name)
-                        config = collection.config.get()
-                        
-                        if not config.multi_tenancy_config.enabled:
-                            print(f"Multi-tenancy is not enabled on existing collection '{collection_name}'. Manual intervention might be needed if data exists.")
-                        elif not config.multi_tenancy_config.auto_tenant_creation:
-                            print(f"Attempting to enable auto-tenant creation on existing MT collection '{collection_name}'...")
-                            collection.config.update(
-                                multi_tenancy_config=Reconfigure.multi_tenancy(auto_tenant_creation=True)
-                            )
-                            print(f"Auto-tenant creation enabled.")
-                    except Exception as config_e:
-                        print(f"ERROR checking config for collection '{collection_name}': {config_e}")
-                # --- End Schema Check / Update ---
-            except Exception as e:
-                print(f"ERROR during Weaviate connection or schema creation: {e}")
-                traceback.print_exc()
-                app.state.weaviate_client = None # Ensure state is None on failure
-    else:
-        print("Running in LOCAL vector store mode. Weaviate client not initialized.")
-        app.state.weaviate_client = None
-            
-    yield # Application runs here
+    """
+    Manage application lifespan events:
+    - Initialize MongoDB connection.
+    - Initialize Weaviate client (if not in local mode).
+    - Clean up connections on shutdown.
+    """
+    logger.info("Application startup: Initializing resources...")
     
-    # Shutdown: Close Weaviate Client from app.state
-    client_to_close = getattr(app.state, 'weaviate_client', None)
-    if client_to_close and hasattr(client_to_close, 'close'):
-        print("Closing Weaviate client connection...")
-        client_to_close.close()
-        print("Weaviate client closed.")
-    else:
-        print("No Weaviate client found in app.state to close.")
+    # --- Initialize MongoDB --- 
+    try:
+        mongo_client = await init_mongodb()
+        # Storing client in app.state might be useful if needed directly
+        # app.state.mongo_client = mongo_client 
+        logger.info("MongoDB connection initialized successfully.")
+    except Exception as mongo_err:
+        logger.critical(f"CRITICAL: Failed to initialize MongoDB: {mongo_err}", exc_info=True)
+        # Decide whether to exit application or continue with limited functionality
+        raise RuntimeError("MongoDB initialization failed") from mongo_err
 
-# --- Setup FastAPI App with Lifespan --- 
+    # --- Initialize Weaviate client (if needed) --- 
+    app.state.weaviate_client = None # Ensure attribute exists
+    if not Config.USE_LOCAL_VECTOR_STORE:
+        logger.info("Remote mode: Initializing Weaviate client...")
+        try:
+            app.state.weaviate_client = await setup_weaviate_client()
+            if app.state.weaviate_client:
+                 logger.info("Weaviate client initialized and stored in app.state.")
+            else:
+                 # setup_weaviate_client logs errors internally, but we add a critical log here
+                 logger.critical("CRITICAL: Weaviate client initialization returned None! Remote vector store functionality will fail.")
+                 # Optionally raise error to prevent startup with failed essential component
+                 # raise RuntimeError("Failed to initialize Weaviate client")
+        except Exception as wv_err:
+            logger.critical(f"CRITICAL: Unhandled exception during Weaviate client setup: {wv_err}", exc_info=True)
+            # Optionally raise error
+            # raise RuntimeError("Weaviate client initialization failed") from wv_err
+    else:
+        logger.info("Local mode: Skipping Weaviate client initialization.")
+            
+    # --- Application is ready to run --- 
+    logger.info("Resource initialization complete. Application starting.")
+    yield 
+    # Application runs here until shutdown signal
+    
+    # --- Cleanup on shutdown --- 
+    logger.info("Application shutdown sequence initiated...")
+    # Shutdown Weaviate Client
+    weaviate_client_to_close = getattr(app.state, 'weaviate_client', None)
+    if weaviate_client_to_close:
+        logger.info("Closing Weaviate client connection...")
+        await close_weaviate_client(weaviate_client_to_close)
+    else:
+        logger.info("No active Weaviate client in app state to close.")
+        
+    # Shutdown MongoDB Connection
+    logger.info("Closing MongoDB connection...")
+    await close_mongodb()
+    logger.info("Resource cleanup complete. Application shutdown finished.")
+
+# Initialize FastAPI app with lifespan manager
 app = FastAPI(
     title="docRAG API",
-    description="API for interacting with the RAG document chatbot.",
+    description="API for interacting with the RAG document chatbot",
     version="0.1.0",
-    lifespan=lifespan # Register the lifespan context manager
+    lifespan=lifespan
 )
 
 # CORS configuration
-# Update origins if your frontend runs on a different port
-origins = [
-    "http://localhost",
-    "http://localhost:5173", # Default Vite port
-    "http://127.0.0.1:5173",
-    "*",  # Allow all origins temporarily
-    # Add other origins if needed (e.g., your deployed frontend URL)
-]
+# Read allowed origins from env var, defaulting to typical local dev ports
+allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5000")
+try:
+    origins = [origin.strip() for origin in allowed_origins_str.split(',') if origin.strip()]
+    if not origins:
+        raise ValueError("Parsed CORS_ALLOWED_ORIGINS is empty.")
+except Exception as e:
+    logger.warning(f"Failed to parse CORS_ALLOWED_ORIGINS ('{allowed_origins_str}'): {e}. Defaulting to permissive local setup.")
+    # Fallback to a permissive default for local dev if parsing fails
+    origins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5000"]
 
+logger.info(f"Configuring CORS middleware for origins: {origins}")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    # Consider restricting headers more in production
+    allow_headers=["Content-Type", "Authorization", "X-Session-ID", "*"], 
+    expose_headers=["Content-Type", "Authorization", "Content-Length"],
+    max_age=3600 # Cache preflight requests for 1 hour
 )
 
-# --- Globals / Shared Resources --- 
-# Remove app_state = {"chain": None} - chain will be managed via get_rag_chain
+# Include API routers
+app.include_router(auth_router, prefix="/api", tags=["Authentication"])
+app.include_router(documents_router, prefix="/api/documents", tags=["Documents"])
+app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
+app.include_router(preferences_router, prefix="/api/preferences", tags=["Preferences"])
 
-# --- Remove client parameter, pass client to create_chain --- 
-def get_rag_chain() -> Runnable | None: 
-    """Initializes or retrieves the global RAG chain."""
-    global chain_instance
-    if chain_instance is None:
-        print(f"Creating new global RAG chain (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
-        llm = create_llm() # Create LLM
+@app.get("/", tags=["Status"])
+async def read_root():
+    """Root endpoint for basic API status check."""
+    return {"status": "docRAG API is running"}
 
-        # Initialize retriever and create chain
-        retriever = None
-        if Config.USE_LOCAL_VECTOR_STORE:
-            try:
-                # Create local FAISS retriever
-                retriever = create_retriever(llm)
-                print("Local FAISS retriever created successfully.")
-            except Exception as e:
-                print(f"WARNING: Could not create local retriever: {e}")
-                return None
-            
-            # Create chain with the local retriever
-            try:
-                chain_instance = create_chain(llm=llm, retriever=retriever)
-                print("Chain instance created successfully with local retriever.")
-                return chain_instance
-            except Exception as e:
-                print(f"ERROR: Failed to create chain with local retriever: {e}")
-                return None
-        else:
-            # For Weaviate mode, we'll initialize the chain in the chat endpoint 
-            # where we have access to the client from app.state
-            print("Remote mode detected. Chain will be initialized in the chat endpoint.")
-            return None
-    else:
-        # Return existing chain instance
-        return chain_instance
-
-# --- Pydantic Models for Request/Response ---
-class ChatRequest(BaseModel):
-    session_id: str
-    query: str
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: list = []
-
-class ProcessResponse(BaseModel):
-    message: str
-    indexed_files: list[str]
-
-class ProcessRequest(BaseModel):
-    session_id: str # Add session_id field
-
-# --- API Endpoints ---
-
-# Define allowed extensions
-ALLOWED_EXTENSIONS = { ".pdf", ".docx", ".txt", ".md", ".xlsx", ".csv"} # Add/remove as needed
-
-@app.post("/api/upload", status_code=200)
-async def upload_documents(files: list[UploadFile] = File(...)):
-    """Endpoint to upload one or more documents."""
-    print(f"Received {len(files)} file(s) for upload.")
-    uploaded_paths = []
-    temp_dir = Config.Path.DOCUMENTS_DIR
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    processed_filenames = [] # Keep track of successfully saved files
-
-    for file in files:
-        try:
-            # Validate file extension
-            file_ext = Path(file.filename).suffix.lower()
-            if file_ext not in ALLOWED_EXTENSIONS:
-                print(f"Skipping file with unsupported extension: {file.filename}")
-                continue # Skip this file
-
-            safe_filename = Path(file.filename).name
-            file_path = temp_dir / safe_filename
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            uploaded_paths.append(file_path) # Store Path object
-            processed_filenames.append(safe_filename)
-            print(f"Saved uploaded file: {safe_filename}")
-        except Exception as e:
-            print(f"Error saving file {file.filename}: {e}")
-            # Don't raise immediately, allow other files to process
-        finally:
-            await file.close()
-
-    if not processed_filenames:
-        raise HTTPException(status_code=400, detail="No valid files were successfully saved.")
-
-    # Return list of saved filenames (or paths if needed by frontend)
-    return {"message": "Files processed for upload.", "filenames_saved": processed_filenames}
-
-@app.post("/api/process")
-async def process_documents(request: ProcessRequest, client: weaviate.Client = Depends(get_weaviate_client())):
-    """Endpoint to trigger processing of uploaded documents for a specific session."""
-    session_id = request.session_id # Get session_id from request body
-
-    print(f"Received request to process documents for session: {session_id}")
-
-    # Get list of files in the temporary upload directory
-    upload_dir = Config.Path.DOCUMENTS_DIR
-    if not upload_dir.exists():
-        return {"message": "No documents found to process."}
-
-    uploaded_files = [f for f in upload_dir.iterdir() if f.is_file()]
-    if not uploaded_files:
-        return {"message": "No documents found in the upload directory."}
-
-    processed_files_count = 0
-    processed_chunks_count = 0
-    errors = []
-
-    # Load processed hashes
-    processed_hashes = load_processed_hashes(Config.Path.PROCESSED_HASHES_FILE)
-
-    # Create Ingestor instance 
-    # If using local vector store, create it here (needs update for local session handling)
-    # Otherwise, use the shared client passed via lifespan
-    if Config.USE_LOCAL_VECTOR_STORE:
-         # TODO: Update local vector store logic if needed to handle sessions
-         errors.append("Local vector store session handling not implemented yet.")
-         ingestor = Ingestor() # Placeholder
-    elif client: 
-         ingestor = Ingestor(client=client) # Use shared client
-    else:
-        raise HTTPException(status_code=503, detail="Weaviate client not available for processing.")
-
-    try:
-        result = ingest.process_files_for_session(
-            session_id=session_id, 
-            client=client
-        )
-        
-        # Check result and return appropriate response
-        failed_count = len(result.get("failed_files", []))
-        processed_count = result.get("processed_count", 0)
-        skipped_count = result.get("skipped_count", 0)
-
-        # If collection creation failed (handled inside process_files_for_session raising exception) 
-        # or if all attempts failed and nothing was skipped, return 500
-        if failed_count > 0 and processed_count == 0 and skipped_count == 0:
-             print(f"Processing failed significantly for session {session_id}. Result: {result}")
-             # Use 500 for server-side processing failure
-             return JSONResponse(status_code=500, content={"detail": result.get("message", "Processing failed for all files.")})
-        
-        # Otherwise return 200 OK with the summary message
-        print(f"Processing finished for session {session_id}. Result: {result}")
-        return {"message": result.get("message", "Processing completed.")}
-        
-    except Exception as e:
-        # Catch unexpected errors during the process call itself (e.g., collection creation failure)
-        print(f"!!!!!!!! UNEXPECTED ERROR during process_files_for_session call for {session_id}: {e} !!!!!!!!")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal server error during processing: {e}")
-
-@app.post("/api/chat")
-async def chat_endpoint(request: Request, chat_req: ChatRequest):
-    """Endpoint to handle chat questions with streaming, sources, and manual history update."""
-    client: weaviate.Client | None = request.app.state.weaviate_client
-    session_id = chat_req.session_id
-    query = chat_req.query # Renamed from 'message' previously
-
-    print(f"Chat request for session '{session_id}': Query='{query}' (Streaming, Manual History)")
-
-    if not Config.USE_LOCAL_VECTOR_STORE and not client:
-        raise HTTPException(status_code=503, detail="Weaviate client not available.")
-
-    # Ensure tenant exists for this session
-    if not Config.USE_LOCAL_VECTOR_STORE and client:
-        try:
-            collection_name = Config.Database.WEAVIATE_INDEX_NAME
-            print(f"Checking if tenant '{session_id}' exists in collection '{collection_name}'")
-            
-            # Get tenants for the collection (v4 API)
-            if client.collections.exists(collection_name):
-                collection = client.collections.get(collection_name)
-                
-                # Get all tenants and check if our tenant exists
-                tenants = collection.tenants.get()
-                
-                # Check if tenant exists - handle both string and object formats
-                tenant_exists = False
-                for tenant in tenants:
-                    # If tenant is an object with name attribute
-                    if hasattr(tenant, 'name') and tenant.name == session_id:
-                        tenant_exists = True
-                        break
-                    # If tenant is a string
-                    elif isinstance(tenant, str) and tenant == session_id:
-                        tenant_exists = True
-                        break
-                    # If tenant is a dict with name key
-                    elif isinstance(tenant, dict) and tenant.get('name') == session_id:
-                        tenant_exists = True
-                        break
-                
-                if not tenant_exists:
-                    print(f"Creating tenant '{session_id}' in collection '{collection_name}'")
-                    collection.tenants.create(Tenant(name=session_id))
-                    print(f"Tenant '{session_id}' created successfully")
-                else:
-                    print(f"Tenant '{session_id}' already exists")
-            else:
-                print(f"Collection '{collection_name}' does not exist yet")
-                
-        except Exception as e:
-            print(f"Error checking/creating tenant: {e}")
-            traceback.print_exc()  # Add traceback for better debugging
-            # Continue anyway, as the query might still work
-
-    try:
-        # Get the chain or initialize it if needed
-        global chain_instance
-        current_chain = get_rag_chain()
-
-        # If using remote mode and chain not initialized, create it here with the client
-        if current_chain is None and not Config.USE_LOCAL_VECTOR_STORE and client:
-            llm = create_llm()
-            chain_instance = create_chain(llm=llm, client=client)
-            current_chain = chain_instance
-            print("Chain initialized with Weaviate client in chat endpoint.")
-
-        if current_chain is None:
-            raise HTTPException(status_code=503, detail="Chat service not ready. Chain not initialized.")
-
-        # Prepare input for the chain
-        chain_input = {
-            "question": query,
-            "session_id": session_id
-        }
-
-        # Use astream_events for streaming
-        response_stream = current_chain.astream_events(
-            chain_input, # Pass input dict containing session_id
-            # config={"configurable": {"session_id": session_id}}, # Config no longer needed for history
-            version="v1" # Use v1 event stream for structured events
-        )
-
-        # Async generator to process events and update history
-        async def generate_events_and_update_history():
-            final_answer = ""
-            source_documents = []
-            user_message_added = False # Flag to ensure user message is added only once
-            # Keep track of relevant run IDs if needed for source extraction
-            core_rag_chain_run_id = None 
-            
-            try:
-                async for event in response_stream:
-                    kind = event["event"]
-                    name = event.get("name", "") # Get the name of the runnable
-                    run_id = event.get("run_id") # Get run_id for potential tracking
-                    
-                    # Add user message to history store the first time we get an event
-                    if not user_message_added:
-                         history = get_session_history(session_id)
-                         history.add_user_message(query)
-                         user_message_added = True
-                         print(f"History DEBUG: Added user message for session {session_id}")
-
-                    # Identify the run_id of the core RAG chain if needed
-                    # if name == 'core_rag_chain' and not core_rag_chain_run_id:
-                    #     core_rag_chain_run_id = run_id
-
-                    if kind == "on_chat_model_stream":
-                        content = event.get("data", {}).get("chunk", {}).content
-                        if content:
-                            yield f"data: {json.dumps({'type': 'answer_chunk', 'content': content})}\n\n"
-                            final_answer += content
-
-                    # Update source extraction logic if needed (might be simpler now)
-                    elif kind == "on_chain_end" and name == "__main__": # Check end of the main chain invocation
-                        output = event.get("data", {}).get("output")
-                        
-                        # If final output is the string answer
-                        if isinstance(output, str) and not final_answer:
-                           final_answer = output # Capture final answer if streaming missed chunks
-                           print(f"DEBUG generate_events: Captured final answer from on_chain_end: {final_answer[:100]}...")
-                        
-                        # How to get sources now? They aren't explicitly passed through.
-                        # We might need to modify the chain to output sources alongside the answer,
-                        # or fetch them based on the run_id if langchain tracing/events allow.
-                        # For now, source extraction might be broken with this structure.
-                        print(f"DEBUG: Main chain ended. Final answer collected: {final_answer[:100]}...")
-                        print(f"DEBUG: Source extraction logic needs review in manual history mode.")
-
-
-            finally:
-                # --- Manual History Update --- 
-                if final_answer: # Only add if we got an answer
-                    history = get_session_history(session_id)
-                    # Avoid adding duplicate if already added via stream end event?
-                    # Check last message? -> history.messages[-1].content != final_answer
-                    if not history.messages or history.messages[-1].type != 'ai' or history.messages[-1].content != final_answer:
-                       history.add_ai_message(final_answer)
-                       print(f"History DEBUG: Added AI message for session {session_id}")
-                    else:
-                       print(f"History DEBUG: AI message likely already added for session {session_id}")
-                # ----------------------------
-
-                # Send final events
-                print(f"DEBUG generate_events: Final Answer: {final_answer[:100]}...")
-                yield f"data: {json.dumps({'type': 'end', 'content': 'Stream finished'})}\n\n"
-
-        return StreamingResponse(generate_events_and_update_history(), media_type="text/event-stream")
-
-    except Exception as e:
-        print(f"Error during chat processing for session '{session_id}': {e}")
-        traceback.print_exc()
-        # Send an error event over SSE if possible
-        async def error_stream():
-            error_message = f"An error occurred: {str(e)}"
-            yield f"data: {json.dumps({'type': 'error', 'content': error_message})}\n\n"
-            yield f"data: {json.dumps({'type': 'end', 'content': 'Stream finished due to error'})}\n\n"
-        return StreamingResponse(error_stream(), media_type="text/event-stream", status_code=500)
-
-# --- Revert uvicorn run call for direct script execution --- 
 if __name__ == "__main__":
-    # This allows running 'python backend/api.py' from the backend directory
-    uvicorn.run("api:app", host="0.0.0.0", port=8088, reload=True)
+    # Load host and port from environment or use defaults
+    api_host = os.getenv("API_HOST", "127.0.0.1")
+    api_port = int(os.getenv("API_PORT", 8000))
+    # Enable reload only if APP_MODE is explicitly set to 'development'
+    reload_flag = Config.APP_MODE.lower() == "development"
+    
+    log_level_str = os.getenv("LOG_LEVEL", "info").lower()
+    
+    logger.info(f"Starting Uvicorn server on http://{api_host}:{api_port}")
+    logger.info(f"Application Mode: {Config.APP_MODE} (Reload={reload_flag})" )
+    logger.info(f"Vector Store Mode: {'Local FAISS' if Config.USE_LOCAL_VECTOR_STORE else 'Remote Weaviate'}")
+    logger.info(f"LLM Provider: {Config.MODEL_PROVIDER}")
+
+    uvicorn.run(
+        "api:app", 
+        host=api_host, 
+        port=api_port, 
+        reload=reload_flag,
+        log_level=log_level_str # Pass uvicorn's log level string
+    )

@@ -1,67 +1,138 @@
-from langchain_community.chat_models import ChatOllama
-from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
-from langchain_community.embeddings import OllamaEmbeddings
+"""
+Factory functions for creating Language Models (LLMs) and Embedding Models 
+based on the application configuration.
+"""
+import logging
+import os
+
+# Import base classes
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseLanguageModel
+
+# Import specific implementations
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.chat_models import ChatOllama # For older Ollama integration
+from langchain_community.llms import Ollama # Newer interface for direct LLM
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain_groq import ChatGroq
-import os
-from ragbase.config import Config
-# from sentence_transformers import SentenceTransformer
-# from typing import List
-# from PIL import Image
 
-# Remove or comment out the SentenceTransformerEmbeddings class
-# class SentenceTransformerEmbeddings(Embeddings):
-#     def __init__(self, model_name: str):
-#         self.model = SentenceTransformer(model_name)
-# 
-#     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-#         return self.model.encode(texts).tolist()
-# 
-#     def embed_query(self, text: str) -> List[float]:
-#         return self.model.encode(text).tolist()
-# 
-#     def embed_images(self, images: List[Image.Image]) -> List[List[float]]:
-#         # Note: OllamaEmbeddings typically doesn't handle images directly.
-#         # If image embedding is critical, a different multi-modal model setup is needed.
-#         # For now, this method would be unused with OllamaEmbeddings.
-#         # raise NotImplementedError("OllamaEmbeddings does not support embed_images")
-#         pass 
+from .config import Config
 
-# Add back create_embeddings function
-def create_embeddings() -> Embeddings:
-    print(f"Creating OllamaEmbeddings with model '{Config.Model.OLLAMA_EMBEDDING_MODEL}'")
-    try:
-        embeddings = OllamaEmbeddings(
-            model=Config.Model.OLLAMA_EMBEDDING_MODEL,
-            base_url=Config.Model.OLLAMA_BASE_URL
-        )
-        # Optional: Test connection?
-        # embeddings.embed_query("test") 
-        print("OllamaEmbeddings created successfully.")
-        return embeddings
-    except Exception as e:
-        print(f"ERROR: Failed to create OllamaEmbeddings. Ensure Ollama is running at {Config.Model.OLLAMA_BASE_URL} and the model '{Config.Model.OLLAMA_EMBEDDING_MODEL}' is pulled. Error: {e}")
-        raise
+# Configure logger
+logger = logging.getLogger(__name__)
 
 def create_llm() -> BaseLanguageModel:
-    # Always use Groq
-    print("Creating Groq LLM...")
-    try:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY environment variable not set")
-            
-        llm = ChatGroq(
-            api_key=api_key,
+    """Creates the appropriate LLM instance based on Config.MODEL_PROVIDER."""
+    provider = Config.MODEL_PROVIDER.lower()
+    logger.info(f"Creating LLM for provider: {provider}")
+
+    if provider == "openai":
+        if not Config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY must be set in environment for OpenAI provider.")
+        llm = ChatOpenAI(
+            api_key=Config.OPENAI_API_KEY,
+            model=Config.OPENAI_MODEL_NAME,
             temperature=Config.Model.TEMPERATURE,
-            model_name="llama3-8b-8192",  # Hardcoded to a reliable model
             max_tokens=Config.Model.MAX_TOKENS,
+            streaming=True # Enable streaming by default for Chat models
+        )
+        logger.info(f"Using OpenAI model: {Config.OPENAI_MODEL_NAME}")
+
+    elif provider == "ollama":
+        # Using the newer direct Ollama LLM interface
+        llm = Ollama(
+            base_url=Config.OLLAMA_BASE_URL,
+            model=Config.OLLAMA_MODEL_NAME,
+            temperature=Config.Model.TEMPERATURE,
+            # num_ctx=Config.Model.MAX_TOKENS # Adjust if needed, Ollama manages context differently
+        )
+        # Note: Streaming with direct Ollama might require different handling in the chain/API
+        logger.info(f"Using Ollama model: {Config.OLLAMA_MODEL_NAME} from {Config.OLLAMA_BASE_URL}")
+
+    elif provider == "groq":
+        if not Config.GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY must be set in environment for Groq provider.")
+        llm = ChatGroq(
+            api_key=Config.GROQ_API_KEY,
+            model_name=Config.GROQ_MODEL_NAME,
+            temperature=Config.Model.TEMPERATURE,
+            # max_tokens doesn't directly apply to ChatGroq, managed by model limits
             streaming=True
         )
-        print(f"Groq LLM created successfully (Model: llama3-8b-8192)")
-        return llm
-    except Exception as e:
-        print(f"ERROR: Failed to create Groq LLM: {e}")
-        raise
+        logger.info(f"Using Groq model: {Config.GROQ_MODEL_NAME}")
+        
+    else:
+        raise ValueError(f"Unsupported LLM provider configured: {provider}")
+    
+    return llm
+
+def create_embeddings() -> Embeddings:
+    """
+    Creates the appropriate Embeddings instance based on Config settings.
+    Prioritizes provider specified in Config.MODEL_PROVIDER, with fallbacks.
+    """
+    provider = Config.MODEL_PROVIDER.lower()
+    logger.info(f"Attempting to create embedding model for primary provider: {provider}")
+
+    if provider == "openai":
+        if Config.OPENAI_API_KEY:
+            logger.info(f"Using OpenAI embeddings: {Config.OPENAI_EMBEDDING_MODEL_NAME}")
+            try:
+                return OpenAIEmbeddings(
+                    api_key=Config.OPENAI_API_KEY,
+                    model=Config.OPENAI_EMBEDDING_MODEL_NAME
+                )
+            except Exception as e:
+                logger.error(f"Failed to create OpenAI embeddings: {e}")
+                # Fall through to try other providers if configured
+        else:
+            logger.warning("OpenAI provider selected, but OPENAI_API_KEY is not set. Falling back...")
+
+    if provider == "ollama" or provider == "groq": # Groq uses Ollama/OpenAI for embeddings
+        # Try Ollama if it's the primary provider or if falling back from OpenAI/Groq
+        logger.info(f"Attempting to use Ollama embeddings: {Config.OLLAMA_EMBEDDING_MODEL_NAME}")
+        try:
+            embeddings = OllamaEmbeddings(
+                base_url=Config.OLLAMA_BASE_URL,
+                model=Config.OLLAMA_EMBEDDING_MODEL_NAME
+            )
+            # Perform a quick test embed to check connection and model availability
+            embeddings.embed_query("test") 
+            logger.info(f"Using Ollama embeddings: {Config.OLLAMA_EMBEDDING_MODEL_NAME} from {Config.OLLAMA_BASE_URL}")
+            return embeddings
+        except Exception as e:
+            logger.warning(f"Failed to create/connect Ollama embeddings ({Config.OLLAMA_BASE_URL} model: {Config.OLLAMA_EMBEDDING_MODEL_NAME}): {e}")
+            if provider == "ollama": # If Ollama was the primary choice, raise error
+                raise ValueError("Ollama specified as provider, but failed to initialize embeddings.") from e
+            # Otherwise (Groq or failed OpenAI), fall through to try OpenAI as last resort
+
+    # Last resort: Try OpenAI embeddings if keys are set (could happen if Groq is provider)
+    if Config.OPENAI_API_KEY:
+        logger.warning(f"Falling back to OpenAI embeddings as last resort: {Config.OPENAI_EMBEDDING_MODEL_NAME}")
+        try:
+            return OpenAIEmbeddings(
+                api_key=Config.OPENAI_API_KEY,
+                model=Config.OPENAI_EMBEDDING_MODEL_NAME
+            )
+        except Exception as e:
+            logger.error(f"Failed to create OpenAI embeddings as fallback: {e}")
+            # No further fallbacks
+    
+    raise ValueError("Could not create embedding model. Check provider configuration and API keys/connections.")
+
+def create_embedding_model():
+    """Creates the appropriate embedding model based on configuration."""
+    provider = Config.MODEL_PROVIDER.lower()
+    logger.info(f"Creating embedding model for provider: {provider}")
+
+    if provider == "ollama":
+        embeddings = OllamaEmbeddings(
+            base_url=Config.OLLAMA_BASE_URL,
+            model=Config.OLLAMA_EMBEDDING_MODEL_NAME
+        )
+        logger.info(f"Using Ollama embedding model: {Config.OLLAMA_EMBEDDING_MODEL_NAME} from {Config.OLLAMA_BASE_URL}")
+    else:
+        raise ValueError(f"Unsupported embedding provider: {provider}")
+        
+    return embeddings
 
