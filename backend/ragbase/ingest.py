@@ -26,26 +26,30 @@ from weaviate.classes.config import (
 from ragbase.config import Config
 
 # --- Configuration --- 
-COLLECTION_NAME = "DocRagIndex" # Define collection name globally
+COLLECTION_NAME = "RaggerIndex" # Define collection name globally
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
-PROCESSED_HASHES_FILE = "backend/processed_hashes.json"
-UPLOAD_FOLDER = "backend/tmp"
+PROCESSED_HASHES_FILE = Config.Path.PROCESSED_HASHES_FILE # Use config
+# UPLOAD_FOLDER = "backend/tmp" # REMOVE - Use Config.Path.DOCUMENTS_DIR instead
 TEXT_KEY = "text" # Consistent key for text property
 
 def load_processed_hashes() -> Dict[str, str]:
-    if os.path.exists(PROCESSED_HASHES_FILE):
+    # Use path from Config
+    hashes_file_path = Config.Path.PROCESSED_HASHES_FILE
+    if os.path.exists(hashes_file_path):
         try:
-            with open(PROCESSED_HASHES_FILE, 'r') as f:
+            with open(hashes_file_path, 'r') as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError) as e:
             print(f"Warning: Could not load processed hashes file: {e}")
     return {}
 
 def save_processed_hash(file_hash: str, filename: str, processed_hashes: Dict[str, str]):
+    # Use path from Config
+    hashes_file_path = Config.Path.PROCESSED_HASHES_FILE 
     processed_hashes[file_hash] = filename
     try:
-        with open(PROCESSED_HASHES_FILE, 'w') as f:
+        with open(hashes_file_path, 'w') as f:
             json.dump(processed_hashes, f, indent=2)
     except IOError as e:
         print(f"Warning: Could not save processed hashes file: {e}")
@@ -58,38 +62,85 @@ def get_file_hash(file_path: str) -> str:
     return hasher.hexdigest()
 
 def ensure_collection_exists(client: weaviate.Client):
-    """Checks if the collection exists and creates it with the correct schema if not."""
+    """Checks if the collection exists and creates it with the Weaviate Embeddings vectorizer if not. Raises error if existing config is wrong."""
     collection_name = COLLECTION_NAME
+    # --- Use Weaviate Embeddings Model --- 
+    expected_vectorizer_model = "Snowflake/snowflake-arctic-embed-l-v2.0"
+    # -------------------------------------
     
-    # Check if collection exists using Weaviate v4 API
     if client.collections.exists(collection_name):
-        print(f"Collection '{collection_name}' already exists. Verifying configuration (basic check)...")
-        # Basic verification (can be expanded)
+        print(f"Collection '{collection_name}' already exists. Verifying configuration...")
         try:
             collection = client.collections.get(collection_name)
             config = collection.config.get()
             
-            if not config.multi_tenancy_config.enabled:
-                print(f"!!!!!!!! WARNING: Multi-tenancy is DISABLED for existing collection '{collection_name}'. Re-enabling is complex and data loss prone via client. Consider manual WCD check/fix or deletion.")
-            elif not config.multi_tenancy_config.auto_tenant_creation:
-                print(f"Attempting to enable auto-tenant creation on existing MT collection '{collection_name}'...")
-                collection.config.update(
-                    multi_tenancy_config=Reconfigure.multi_tenancy(auto_tenant_creation=True)
-                )
-                print(f"Auto-tenant creation enabled.")
-        except Exception as e:
-            print(f"Warning: Could not verify configuration for existing collection '{collection_name}': {e}")
-        
-        print(f"Skipping creation. Assuming existing schema is acceptable.")
-        return
+            # 1. Verify Multi-Tenancy 
+            mt_config = config.multi_tenancy_config
+            if not mt_config or not mt_config.enabled:
+                 error_msg = f"Multi-tenancy is DISABLED for existing collection '{collection_name}'. Cannot proceed."
+                 print(f"!!!!!!!! CONFIG ERROR: {error_msg} !!!!!!!!")
+                 raise ValueError(error_msg)
+            elif not mt_config.auto_tenant_creation:
+                 print(f"Attempting to enable auto-tenant creation on existing MT collection '{collection_name}'...")
+                 try:
+                     collection.config.update(
+                         multi_tenancy_config=Reconfigure.multi_tenancy(auto_tenant_creation=True)
+                     )
+                     print(f"Auto-tenant creation enabled.")
+                 except Exception as update_e:
+                     error_msg = f"Failed to enable auto-tenant creation for '{collection_name}': {update_e}. Cannot proceed."
+                     print(f"!!!!!!!! CONFIG ERROR: {error_msg} !!!!!!!!")
+                     raise ValueError(error_msg)
+            else:
+                 print("  Multi-tenancy check passed (Enabled with auto-creation).")
 
-    # If collection doesn't exist, create it
-    print(f"Collection '{collection_name}' does not exist. Creating...")
+            # 2. Verify Vectorizer Configuration (Check for Weaviate Embeddings and Model)
+            vec_config = config.vectorizer_config
+            is_correct_vectorizer = False
+            if isinstance(vec_config, list) and len(vec_config) == 1:
+                # --- Check for Text2VecWeaviateConfig --- 
+                module_config = vec_config[0].module_config 
+                if isinstance(module_config, weaviate.classes.config.Text2VecWeaviateConfig):
+                # ----------------------------------------
+                    # Check model name 
+                    # Note: Weaviate might store the default if none was explicitly provided during creation.
+                    # We check if the explicitly set model matches, or if it's None (implying default was used).
+                    # You might need to adjust this check based on Weaviate's exact behavior with defaults.
+                    retrieved_model = getattr(module_config, 'model', None) # Safely get model
+                    if retrieved_model == expected_vectorizer_model or (retrieved_model is None and expected_vectorizer_model == "Snowflake/snowflake-arctic-embed-l-v2.0"): # Check against expected or default
+                        is_correct_vectorizer = True
+                        print(f"  Vectorizer check passed (Found compatible Weaviate Embeddings Config - Model: {retrieved_model or 'Default'}).")
+                    else:
+                         print(f"  Vectorizer mismatch: Found Weaviate Embeddings but model is '{retrieved_model}', expected '{expected_vectorizer_model}'.")
+                else:
+                     # --- Update expected type --- 
+                     print(f"  Vectorizer mismatch: Expected Text2VecWeaviateConfig, found {type(module_config)}.")
+                     # --------------------------
+            elif vec_config is None:
+                 print(f"  Vectorizer mismatch: Expected vectorizer, but found None.")
+            else:
+                 print(f"  Vectorizer check failed: Unexpected format - {vec_config}")
+            
+            if not is_correct_vectorizer:
+                # Update error message
+                error_msg = f"Existing collection '{collection_name}' does not have the correct vectorizer configuration (Expected: Weaviate Embeddings with model {expected_vectorizer_model}). Cannot proceed. Please delete the collection and restart."
+                print(f"!!!!!!!! CONFIG ERROR: {error_msg} !!!!!!!!")
+                raise ValueError(error_msg) 
+
+            print(f"Configuration verified. Using existing collection '{collection_name}'.")
+            return
+
+        except Exception as e:
+            print(f"!!!!!!!! ERROR verifying configuration for existing collection '{collection_name}': {e} !!!!!!!!")
+            traceback.print_exc()
+            raise ValueError(f"Failed to verify configuration for existing collection '{collection_name}': {e}")
+
+    # --- Create Collection if it doesn't exist --- 
+    print(f"Collection '{collection_name}' does not exist. Creating with Weaviate Embeddings vectorizer...") # Update log message
     try:
-        # Create collection using v4 API
         client.collections.create(
             name=collection_name,
-            description="Index for Document RAG",
+            description="Index for Document RAG with Weaviate Embeddings", # Update description
             properties=[
                 Property(name=TEXT_KEY, data_type=DataType.TEXT, description="Content chunk"),
                 Property(name="source", data_type=DataType.TEXT, description="Document source filename"),
@@ -98,22 +149,26 @@ def ensure_collection_exists(client: weaviate.Client):
                 Property(name="element_index", data_type=DataType.INT, description="Index of element on page"),
                 Property(name="doc_hash", data_type=DataType.TEXT, description="Hash of the original document"),
             ],
-            # Vectorizer configuration
-            vectorizer_config=Configure.Vectorizer.none(),
-            # Enable multi-tenancy
+            # --- Use text2vec_weaviate --- 
+            vectorizer_config=[
+                Configure.NamedVectors.text2vec_weaviate(
+                    name="content_vector",
+                    source_properties=[TEXT_KEY],
+                    model=expected_vectorizer_model
+                )
+            ],
+            # -----------------------------
             multi_tenancy_config=Configure.multi_tenancy(
                 enabled=True,
                 auto_tenant_creation=True
             ),
         )
-        print(f"Collection '{collection_name}' created successfully.")
-        # Add a small delay after creation might sometimes help consistency
+        print(f"Collection '{collection_name}' created successfully with Weaviate Embeddings vectorizer.") # Update log message
         time.sleep(2)
     except Exception as e:
         print(f"!!!!!!!! FATAL ERROR: Failed to create collection '{collection_name}' !!!!!!!!")
         print(f"  Exception: {e}")
         traceback.print_exc()
-        # Re-raise to stop processing if collection creation fails
         raise e
 
 def add_chunks_to_weaviate(client: weaviate.Client, tenant_id: str, chunks: List[Document], text_key: str = TEXT_KEY):
@@ -255,34 +310,40 @@ def load_and_chunk_docs(file_path: str, chunk_size: int = CHUNK_SIZE, chunk_over
 
 # --- Main Processing Function (Example Structure) --- 
 def process_files_for_session(session_id: str, client: weaviate.Client = None) -> Dict[str, Any]:
-    """Processes all files found in the temp folder for the given session."""
+    """Processes all files found in the specific session's temp folder."""
     print(f"Starting processing run for session '{session_id}'")
     
+    # --- Determine session-specific upload directory --- 
+    session_upload_dir = Config.Path.DOCUMENTS_DIR / session_id
+    session_upload_dir_str = str(session_upload_dir)
+    print(f"Looking for files in session directory: {session_upload_dir_str}")
+    # -------------------------------------------------
+
     # Check if we're using local vector store
     if Config.USE_LOCAL_VECTOR_STORE:
         print(f"Using LOCAL vector store (FAISS) for session '{session_id}'")
-        # Use ingestor to handle local mode
         from ragbase.ingestor import Ingestor
         ingestor = Ingestor()
         
-        # Ensure upload folder exists
-        if not os.path.exists(UPLOAD_FOLDER):
-            os.makedirs(UPLOAD_FOLDER)
-            print(f"Created upload folder: {UPLOAD_FOLDER}")
+        # --- Check session-specific directory --- 
+        if not session_upload_dir.exists():
+            # If the session dir doesn't exist, there's nothing to process for this session
+            print(f"Session directory {session_upload_dir_str} not found. No files to process.")
+            return {"message": f"No files found to process for session '{session_id}'.", 
+                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
         
-        # Process files in upload folder
-        files_to_process = [Path(os.path.join(UPLOAD_FOLDER, f)) for f in os.listdir(UPLOAD_FOLDER) 
-                           if os.path.isfile(os.path.join(UPLOAD_FOLDER, f))]
+        # Process files ONLY from the session-specific directory
+        files_to_process = [f for f in session_upload_dir.iterdir() if f.is_file()]
+        # ------------------------------------------
         
         if not files_to_process:
-            print(f"No files found in {UPLOAD_FOLDER} to process for session '{session_id}'.")
+            print(f"No files found in {session_upload_dir_str} to process for session '{session_id}'.")
             return {"message": f"No new files found to process for session '{session_id}'.", 
                     "processed_count": 0, "skipped_count": 0, "failed_files": []}
         
+        # --- Rest of local processing logic (unchanged) --- 
         try:
-            # Use ingestor to handle local FAISS ingestion
             success = ingestor.ingest(files_to_process)
-            
             if success:
                 return {"message": f"Successfully processed {len(files_to_process)} files for session '{session_id}'", 
                         "processed_count": len(files_to_process), "skipped_count": 0, "failed_files": []}
@@ -294,16 +355,16 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
             traceback.print_exc()
             return {"message": f"Error processing files: {str(e)}", 
                     "processed_count": 0, "skipped_count": 0, "failed_files": [f.name for f in files_to_process]}
+        # ------------------------------------------------
     
     # Original Weaviate-based processing logic
     else:
-        # --- Ensure collection exists --- 
+        # --- Ensure collection exists (unchanged) --- 
         try:
             if not client:
                 msg = "Weaviate client is required for remote vector store mode"
                 print(msg)
                 return {"message": msg, "processed_count": 0, "skipped_count": 0, "failed_files": []}
-                
             ensure_collection_exists(client)
         except Exception as e:
             msg = f"Stopping processing for session {session_id} due to collection setup error: {e}"
@@ -314,46 +375,53 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
         processed_files_count = 0
         skipped_files_count = 0
         failed_files_list = []
-        processed_hashes = load_processed_hashes()
 
-        # Ensure upload folder exists
-        if not os.path.exists(UPLOAD_FOLDER):
-             os.makedirs(UPLOAD_FOLDER)
-             print(f"Created upload folder: {UPLOAD_FOLDER}")
-
-        # Process files in the upload folder (adjust path/filtering as needed)
-        files_to_process = [f for f in os.listdir(UPLOAD_FOLDER) if os.path.isfile(os.path.join(UPLOAD_FOLDER, f))]
+        # --- Check session-specific directory --- 
+        if not session_upload_dir.exists():
+            # If the session dir doesn't exist, there's nothing to process for this session
+            print(f"Session directory {session_upload_dir_str} not found. No files to process.")
+            return {"message": f"No files found to process for session '{session_id}'.", 
+                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
+        
+        # Process files ONLY from the session-specific directory
+        files_to_process = [f for f in session_upload_dir.iterdir() if f.is_file()]
+        # ------------------------------------------
+        
         if not files_to_process:
-            print(f"No files found in {UPLOAD_FOLDER} to process for session '{session_id}'.")
-            return {"message": f"No new files found to process for session '{session_id}'.", "processed_count": 0, "skipped_count": 0, "failed_files": []}
+            print(f"No files found in {session_upload_dir_str} to process for session '{session_id}'.")
+            return {"message": f"No new files found to process for session '{session_id}'.", 
+                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
 
-        print(f"Found {len(files_to_process)} files in upload folder.")
+        print(f"Found {len(files_to_process)} files in session directory {session_upload_dir_str}.")
 
-        for filename in files_to_process:
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
+        # --- Rest of Weaviate processing logic (largely unchanged, but operates on session files) --- 
+        for file_path_obj in files_to_process:
+            filename = file_path_obj.name
+            file_path_str = str(file_path_obj) 
             try:
-                file_hash = get_file_hash(file_path)
+                processed_hashes = load_processed_hashes() # Load fresh before each file
+                file_hash = get_file_hash(file_path_str)
+                
                 if file_hash in processed_hashes:
                     print(f"Skipping already processed file: {filename} (Hash: {file_hash[:8]}...)")
                     skipped_files_count += 1
                     continue
 
                 print(f"Processing new file: {filename}")
-                chunks = load_and_chunk_docs(file_path)
+                chunks = load_and_chunk_docs(file_path_str)
                 if not chunks:
                     print(f"Failed to load or chunk file: {filename}")
                     failed_files_list.append(filename)
                     continue
 
-                # Add hash and source to metadata *after* chunking
+                # Add hash and source to metadata
                 for chunk in chunks:
                     chunk.metadata["doc_hash"] = file_hash
-                    chunk.metadata["source"] = filename # Store original filename
+                    chunk.metadata["source"] = filename 
                 
-                # Attempt to add chunks to Weaviate for the current session/tenant
                 success = add_chunks_to_weaviate(
                     client=client, 
-                    tenant_id=session_id, # Use session_id as tenant_id
+                    tenant_id=session_id, 
                     chunks=chunks
                 )
 
@@ -370,15 +438,18 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
                  traceback.print_exc()
                  failed_files_list.append(filename)
             finally:
-                 # Optionally remove file after processing attempt
-                 # try:
-                 #     os.remove(file_path)
-                 #     print(f"Removed temporary file: {filename}")
-                 # except OSError as rm_err:
-                 #     print(f"Warning: Could not remove temporary file {filename}: {rm_err}")
-                 pass # Decide on file removal strategy
+                 # --- IMPORTANT: Consider deleting file AFTER successful processing --- 
+                 # If you want to remove the file from the session dir after it's in Weaviate
+                 # if success: # Only remove if successfully ingested
+                 #     try:
+                 #         os.remove(file_path_str)
+                 #         print(f"Removed temporary file: {filename} from {session_upload_dir_str}")
+                 #     except OSError as rm_err:
+                 #         print(f"Warning: Could not remove temporary file {filename}: {rm_err}")
+                 pass # Current strategy: Leave files in session folders
+                 # --------------------------------------------------------------------
                  
-        final_message = f"Processing finished for session '{session_id}'. Processed {processed_files_count} new files, skipped {skipped_files_count}, failed {len(failed_files_list)}."
+        final_message = f"Processing finished for session '{session_id}'. Processed {processed_files_count} new files from session folder, skipped {skipped_files_count}, failed {len(failed_files_list)}."
         if failed_files_list:
              final_message += f" Failed files: {', '.join(failed_files_list)}"
         print(final_message)

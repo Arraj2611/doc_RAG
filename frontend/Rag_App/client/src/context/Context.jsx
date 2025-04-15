@@ -236,39 +236,65 @@ const ContextProvider = (props) => {
         }),
 
         onmessage(event) {
-          if (!event.data) return;
+          if (!event.data) {
+            console.log("SSE onmessage: Received empty event data.");
+            return;
+          }
+          console.log("SSE onmessage: Raw data received:", event.data);
+
           try {
             const parsedData = JSON.parse(event.data);
+            console.log("SSE onmessage: Parsed data:", parsedData);
+
             if (parsedData.type === 'answer_chunk') {
+              console.log("SSE onmessage: Handling answer_chunk:", parsedData.content);
               assistantResponse += parsedData.content;
-              setCurrentTurnResult(prev => prev + parsedData.content); // Append chunk
+              setCurrentTurnResult(prev => prev + parsedData.content);
+              console.log("SSE onmessage: currentTurnResult updated.");
             } else if (parsedData.type === 'sources') {
+              console.log("SSE onmessage: Handling sources:", parsedData.content);
               setCurrentTurnSources(parsedData.content || []);
             } else if (parsedData.type === 'end') {
-              // Stream finished, add complete assistant message to history
-              setChatHistory(prev => [...prev, { role: "assistant", content: assistantResponse }]);
-              // TODO: Save messages (user + assistant) to Node.js backend here
+              console.log("SSE onmessage: Handling end event. Final assistant response:", assistantResponse);
+              // --- Add final message ONLY on 'end' event --- 
+              if (assistantResponse) {
+                setChatHistory(prev => {
+                  if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantResponse) {
+                    return prev; // Avoid duplicates if end fires multiple times somehow
+                  }
+                  return [...prev, { role: "assistant", content: assistantResponse }];
+                });
+              }
+              // --- Stop loading ONLY on 'end' event ---
+              setLoading(false);
             } else if (parsedData.type === 'error') {
-              console.error("Backend Stream Error:", parsedData.content);
+              console.error("SSE onmessage: Handling error event:", parsedData.content);
               setCurrentTurnResult(prev => prev + `\n\nERROR: ${parsedData.content}`);
-              // Add error message to history?
               setChatHistory(prev => [...prev, { role: "assistant", content: `Error: ${parsedData.content}` }]);
               setLoading(false);
             }
           } catch (e) {
-            console.error("Failed to parse SSE message data:", event.data, e);
-            if (typeof event.data === 'string') {
-              setCurrentTurnResult((prev) => prev + event.data + '\n');
-            } else {
-              setCurrentTurnResult((prev) => prev + "\n\nError: Received unparseable message from backend.\n");
-            }
+            console.error("SSE onmessage: Failed to parse JSON or process message:", event.data, e);
+            setCurrentTurnResult((prev) => prev + "\n\nError: Received unparseable message from backend.\n");
             setChatHistory(prev => [...prev, { role: "assistant", content: `Error: Unparseable message - ${event.data}` }]);
+            setLoading(false);
           }
         },
 
         onclose() {
           console.log("SSE Connection closed by server.");
-          setLoading(false);
+          // --- REMOVE history update and loading state change from here --- 
+          // // Only set loading to false if we haven't received a complete response yet
+          // if (!assistantResponse) {
+          //   setLoading(false);
+          // } else {
+          //   setLoading(false);
+          //   // If the connection closed but we have a partial response, make sure it's added to history
+          //   if (assistantResponse && !chatHistory.some(msg => msg.role === "assistant" && msg.content === assistantResponse)) {
+          //     setChatHistory(prev => [...prev, { role: "assistant", content: assistantResponse }]);
+          //   }
+          // }
+          // --- Loading state should be reliably set to false when the 'end' or 'error' event is received --- 
         },
 
         onerror(err) {
@@ -296,38 +322,52 @@ const ContextProvider = (props) => {
     setSelectedFiles(files);
     // Automatically trigger upload after files are selected
     if (files.length > 0) {
-      uploadFiles(files);
+      // --- Pass currentSessionId to uploadFiles --- 
+      if (!currentSessionId) {
+        toast.error("Cannot upload files: No active chat session.");
+        return;
+      }
+      uploadFiles(files, currentSessionId);
+      // -----------------------------------------
     }
   };
 
-  const uploadFiles = async (filesToUpload) => {
+  const uploadFiles = async (filesToUpload, sessionId) => {
     if (!filesToUpload || filesToUpload.length === 0) {
       toast.warn("No files selected for upload.");
       return;
     }
+    if (!sessionId) {
+      toast.error("Cannot upload files: No active session ID.");
+      return;
+    }
 
     setIsUploading(true);
-    setLastUploadResult(null); // Clear previous result
-    toast.info(`Uploading ${filesToUpload.length} file(s)...`);
+    setLastUploadResult(null);
+    toast.info(`Uploading ${filesToUpload.length} file(s) for session ${sessionId}...`);
 
     const formData = new FormData();
+    // --- Append session_id to form data --- 
+    formData.append("session_id", sessionId);
+    // -------------------------------------
     filesToUpload.forEach((file) => {
-      formData.append("files", file); // Backend expects 'files'
+      formData.append("files", file);
     });
 
     try {
-      console.log(`Sending files to ${RAG_BACKEND_URL}/api/upload`);
+      console.log(`Sending files to ${RAG_BACKEND_URL}/api/upload for session ${sessionId}`);
       const response = await axios.post(`${RAG_BACKEND_URL}/api/upload`, formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          // Content-Type is set automatically by browser for FormData
+          // 'Content-Type': 'multipart/form-data',
         },
-        timeout: 30000, // 30 second timeout
+        timeout: 30000,
       });
       console.log("Upload response:", response.data);
       setLastUploadResult({ success: true, data: response.data });
       toast.success(`Successfully uploaded ${response.data.filenames_saved?.length || 0} file(s). Ready to process.`);
-      // Clear selected files after successful upload?
-      // setSelectedFiles([]); 
+      // Clear selected files after successful upload
+      setSelectedFiles([]);
     } catch (error) {
       console.error("Error uploading files:", error);
       const errorMsg = error.response?.data?.detail || error.message || "Unknown upload error";

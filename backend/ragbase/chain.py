@@ -21,7 +21,8 @@ from weaviate.classes.query import MetadataQuery, Filter
 from langchain_core.output_parsers import StrOutputParser
 
 from .retriever import create_retriever
-from .ingest import COLLECTION_NAME
+from .config import Config
+from .ingest import COLLECTION_NAME, TEXT_KEY
 
 # --- Prompt Setup ---
 # Update SYSTEM_PROMPT to include chat_history instructions
@@ -104,35 +105,51 @@ def get_session_history(session_id: str) -> ChatMessageHistory:
         print(f"DEBUG get_session_history: Retrieving history for session '{session_id}'")
     return store[session_id]
 
-# --- Weaviate Retrieval --- 
-def retrieve_context_weaviate(query: str, client: weaviate.WeaviateClient, session_id: str, k: int = 5) -> List[Document]:
-    """Retrieves documents from Weaviate using nearText search for a specific tenant."""
-    tenant_id = session_id 
-    print(f"--- DEBUG retrieve_context_weaviate: Tenant='{tenant_id}' Query='{query[:50]}...' K={k}") 
+# --- Weaviate Retrieval (Multi-Tenant) ---
+def retrieve_context_weaviate(query: str, client: weaviate.Client, session_id: str) -> List[Document]:
+    """Retrieves context from Weaviate for a specific tenant using nearText vector search against the named vector."""
+    print(f"Retrieving context from Weaviate for tenant '{session_id}' using nearText with query: '{query[:50]}...'")
+    collection_name = COLLECTION_NAME # Use constant defined in ingest.py or Config
+    text_key = TEXT_KEY             # Use constant defined in ingest.py or Config
+    target_vector_name = "content_vector" # The name we gave our vector in ingest.py
 
     try:
-        # Use the imported COLLECTION_NAME
-        collection = client.collections.get(COLLECTION_NAME).with_tenant(tenant_id)
-        near_text_params = {"query": query, "limit": k}
-        print(f"--- DEBUG retrieve_context_weaviate: Executing nearText with params: {near_text_params}")
-        
-        response = collection.query.near_text(
-            query=query,
-            limit=k,
-        )
+        if not client.collections.exists(collection_name):
+            print(f"  Warning: Collection '{collection_name}' does not exist. Cannot retrieve.")
+            return []
 
-        print(f"--- DEBUG retrieve_context_weaviate: Received {len(response.objects)} results via nearText for tenant '{tenant_id}'.")
-        
-        docs = [
-            Document(
-                page_content=obj.properties.get('text', ''), 
-                metadata={**obj.properties, "distance": obj.metadata.distance if obj.metadata else None}
-            ) 
-            for obj in response.objects
-        ]
-        return docs
+        collection = client.collections.get(collection_name)
+        collection_tenant = collection.with_tenant(session_id)
+
+        # --- Perform nearText vector search targeting the correct named vector --- 
+        response = collection_tenant.query.near_text(
+            query=query,
+            limit=Config.Retriever.SEARCH_K,
+            target_vector=target_vector_name, # Specify the target vector name
+            return_metadata=MetadataQuery(distance=True)
+        )
+        # ----------------------------------------------------------------------
+
+        retrieved_docs = []
+        if response and response.objects:
+             print(f"  Retrieved {len(response.objects)} nearText results from Weaviate.")
+             for obj in response.objects:
+                 metadata = {k: v for k, v in obj.properties.items() if k != text_key}
+                 if obj.metadata and obj.metadata.distance is not None:
+                     metadata["distance_score"] = obj.metadata.distance
+                 doc = Document(
+                     page_content=obj.properties.get(text_key, ""),
+                     metadata=metadata
+                 )
+                 retrieved_docs.append(doc)
+        else:
+            print(f"  No nearText results retrieved from Weaviate for tenant '{session_id}'.")
+
+        return retrieved_docs
+
     except Exception as e:
-        print(f"ERROR in retrieve_context_weaviate for tenant '{tenant_id}': {e}")
+        print(f"!!!!!!!! ERROR retrieving context from Weaviate (nearText) for tenant '{session_id}': {e} !!!!!!!!")
+        traceback.print_exc()
         return []
 
 # --- Chain Creation (Revised) ---
@@ -165,34 +182,40 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
             # Local mode with FAISS retriever
             print(f"Using local retriever for session '{session_id}'")
             docs = retriever.get_relevant_documents(question)
-            return format_docs(docs)
+            return docs
         elif client:
             # Remote mode with Weaviate
             print(f"Using Weaviate retrieval for session '{session_id}'")
-            return format_docs(retrieve_context_weaviate(question, client, session_id))
+            docs = retrieve_context_weaviate(question, client, session_id)
+            return docs
         else:
             print(f"WARNING: No retriever or client available for session '{session_id}'")
-            return "No retrieval system available."
+            return []
 
     # Define the core RAG chain
     rag_chain = (
-        RunnablePassthrough.assign( # Step 1: Fetch history object and extract messages
+        # Step 1: Fetch history and assign to chat_history
+        RunnablePassthrough.assign(
             chat_history=(
                 itemgetter("session_id") 
                 | RunnableLambda(get_session_history, name="FetchHistoryObject") 
                 | RunnableLambda(lambda history_obj: history_obj.messages, name="ExtractMessages")
-            ) # Pass the list of messages
+            )
         )
-        | RunnableParallel( # Step 2: Retrieve context and pass history list 
+        # Step 2: Retrieve docs and format them (fixed to avoid duplicate calls)
+        | RunnablePassthrough.assign(
+            retrieved_docs=RunnableLambda(get_context, name="GetRelevantDocs"),
+        )
+        | RunnablePassthrough.assign(
+            context=lambda x: format_docs(x["retrieved_docs"]),
+        )
+        # Step 3: Run LLM and keep sources
+        | RunnableParallel(
             {
-                "context": RunnableLambda(get_context),
-                "question": itemgetter("question"),
-                "chat_history": itemgetter("chat_history") # Pass the list of messages fetched in Step 1
+                "answer": prompt | llm | StrOutputParser(),
+                "source_documents": itemgetter("retrieved_docs") 
             }
         )
-        | prompt # Step 3: Format prompt
-        | llm    # Step 4: Call LLM
-        | StrOutputParser() # Step 5: Parse output
     )
 
     print("RAG chain (Manual History Version) created successfully.")
