@@ -1,21 +1,22 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-dotenv.config();
-
-import connectDB from "./config/db.js";
-import authRoutes from "./routes/authRoutes.js";
-
+import 'dotenv/config';
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import connectDB from './config/db.js';
+import authRoutes from './routes/authRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
 
 const app = express();
 
-// Connect to the database
+// Connect to database
 connectDB();
 
-app.use(express.json());
+// Middlewares
 app.use(cors());
+app.use(express.json());
 
-app.use("/api/auth", authRoutes);
-
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/chats', chatRoutes);
 
 export default app;

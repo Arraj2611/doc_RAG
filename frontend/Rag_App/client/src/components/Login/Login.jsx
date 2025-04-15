@@ -11,7 +11,8 @@ const Login = () => {
     password: "",
   });
 
-  const navigate = useNavigate();
+  // Remove unused navigate hook from here
+  // const navigate = useNavigate();
   const { login } = useContext(Context);
 
   const handleInput = (event) => {
@@ -24,6 +25,12 @@ const Login = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
+    // Directly call the login function from the context
+    // The context function will handle API call, state updates, and navigation
+    await login(loginDetails.email, loginDetails.password);
+
+    // Remove the old fetch call and error handling block
+    /*
     try {
       const response = await fetch("http://localhost:7000/api/auth/login", {
         method: "POST",
@@ -52,6 +59,7 @@ const Login = () => {
       login(loginDetails.email, loginDetails.password);
       navigate("/app");
     }
+    */
   };
 
   return (

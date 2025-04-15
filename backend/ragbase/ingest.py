@@ -313,11 +313,15 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
     """Processes all files found in the specific session's temp folder."""
     print(f"Starting processing run for session '{session_id}'")
     
-    # --- Determine session-specific upload directory --- 
     session_upload_dir = Config.Path.DOCUMENTS_DIR / session_id
     session_upload_dir_str = str(session_upload_dir)
     print(f"Looking for files in session directory: {session_upload_dir_str}")
-    # -------------------------------------------------
+
+    # --- Lists to track results --- 
+    processed_filenames_list = []
+    skipped_files_count = 0
+    failed_files_list = []
+    # ------------------------------
 
     # Check if we're using local vector store
     if Config.USE_LOCAL_VECTOR_STORE:
@@ -325,81 +329,77 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
         from ragbase.ingestor import Ingestor
         ingestor = Ingestor()
         
-        # --- Check session-specific directory --- 
         if not session_upload_dir.exists():
-            # If the session dir doesn't exist, there's nothing to process for this session
             print(f"Session directory {session_upload_dir_str} not found. No files to process.")
             return {"message": f"No files found to process for session '{session_id}'.", 
-                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
+                    "processed_count": 0, "processed_filenames": [], 
+                    "skipped_count": 0, "failed_files": []}
         
-        # Process files ONLY from the session-specific directory
         files_to_process = [f for f in session_upload_dir.iterdir() if f.is_file()]
-        # ------------------------------------------
-        
         if not files_to_process:
             print(f"No files found in {session_upload_dir_str} to process for session '{session_id}'.")
             return {"message": f"No new files found to process for session '{session_id}'.", 
-                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
+                    "processed_count": 0, "processed_filenames": [],
+                    "skipped_count": 0, "failed_files": []}
         
-        # --- Rest of local processing logic (unchanged) --- 
+        # TODO: Local ingestor needs updating to return which files succeeded/failed/skipped
+        # For now, assume all attempted files are processed if ingest() is true
         try:
             success = ingestor.ingest(files_to_process)
-            if success:
-                return {"message": f"Successfully processed {len(files_to_process)} files for session '{session_id}'", 
-                        "processed_count": len(files_to_process), "skipped_count": 0, "failed_files": []}
-            else:
-                return {"message": f"Failed to process files for session '{session_id}'", 
-                        "processed_count": 0, "skipped_count": 0, "failed_files": [f.name for f in files_to_process]}
+            processed_filenames_list = [f.name for f in files_to_process] if success else []
+            failed_files_list = [] if success else [f.name for f in files_to_process]
+            
+            final_message = f"LOCAL Processing finished for session '{session_id}'. Processed {len(processed_filenames_list)}, Skipped {skipped_files_count}, Failed {len(failed_files_list)}."
+            print(final_message)
+            return {"message": final_message,
+                    "processed_count": len(processed_filenames_list),
+                    "processed_filenames": processed_filenames_list, 
+                    "skipped_count": skipped_files_count, 
+                    "failed_files": failed_files_list}
         except Exception as e:
-            print(f"Error processing files for session '{session_id}': {e}")
+            # ... (local error handling as before, but return lists) ...
+            print(f"Error processing files locally for session '{session_id}': {e}")
             traceback.print_exc()
+            failed_files_list = [f.name for f in files_to_process] # Assume all failed on exception
             return {"message": f"Error processing files: {str(e)}", 
-                    "processed_count": 0, "skipped_count": 0, "failed_files": [f.name for f in files_to_process]}
-        # ------------------------------------------------
+                    "processed_count": 0, "processed_filenames": [],
+                    "skipped_count": 0, "failed_files": failed_files_list}
     
-    # Original Weaviate-based processing logic
+    # Weaviate-based processing logic
     else:
         # --- Ensure collection exists (unchanged) --- 
         try:
             if not client:
                 msg = "Weaviate client is required for remote vector store mode"
                 print(msg)
-                return {"message": msg, "processed_count": 0, "skipped_count": 0, "failed_files": []}
+                return {"message": msg, "processed_count": 0, "processed_filenames": [], "skipped_count": 0, "failed_files": []}
             ensure_collection_exists(client)
         except Exception as e:
             msg = f"Stopping processing for session {session_id} due to collection setup error: {e}"
             print(msg)
-            return {"message": msg, "processed_count": 0, "skipped_count": 0, "failed_files": []}
+            return {"message": msg, "processed_count": 0, "processed_filenames": [], "skipped_count": 0, "failed_files": []}
         # ---------------------------------
 
-        processed_files_count = 0
-        skipped_files_count = 0
-        failed_files_list = []
-
-        # --- Check session-specific directory --- 
         if not session_upload_dir.exists():
-            # If the session dir doesn't exist, there's nothing to process for this session
             print(f"Session directory {session_upload_dir_str} not found. No files to process.")
             return {"message": f"No files found to process for session '{session_id}'.", 
-                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
+                    "processed_count": 0, "processed_filenames": [], 
+                    "skipped_count": 0, "failed_files": []}
         
-        # Process files ONLY from the session-specific directory
         files_to_process = [f for f in session_upload_dir.iterdir() if f.is_file()]
-        # ------------------------------------------
-        
         if not files_to_process:
             print(f"No files found in {session_upload_dir_str} to process for session '{session_id}'.")
             return {"message": f"No new files found to process for session '{session_id}'.", 
-                    "processed_count": 0, "skipped_count": 0, "failed_files": []}
+                    "processed_count": 0, "processed_filenames": [],
+                    "skipped_count": 0, "failed_files": []}
 
         print(f"Found {len(files_to_process)} files in session directory {session_upload_dir_str}.")
 
-        # --- Rest of Weaviate processing logic (largely unchanged, but operates on session files) --- 
         for file_path_obj in files_to_process:
             filename = file_path_obj.name
             file_path_str = str(file_path_obj) 
             try:
-                processed_hashes = load_processed_hashes() # Load fresh before each file
+                processed_hashes = load_processed_hashes() 
                 file_hash = get_file_hash(file_path_str)
                 
                 if file_hash in processed_hashes:
@@ -414,7 +414,6 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
                     failed_files_list.append(filename)
                     continue
 
-                # Add hash and source to metadata
                 for chunk in chunks:
                     chunk.metadata["doc_hash"] = file_hash
                     chunk.metadata["source"] = filename 
@@ -428,7 +427,7 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
                 if success:
                     print(f"Successfully processed and ingested: {filename}")
                     save_processed_hash(file_hash, filename, processed_hashes)
-                    processed_files_count += 1
+                    processed_filenames_list.append(filename) # Add to success list
                 else:
                     print(f"Failed to ingest chunks for file: {filename}")
                     failed_files_list.append(filename)
@@ -438,23 +437,19 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
                  traceback.print_exc()
                  failed_files_list.append(filename)
             finally:
-                 # --- IMPORTANT: Consider deleting file AFTER successful processing --- 
-                 # If you want to remove the file from the session dir after it's in Weaviate
-                 # if success: # Only remove if successfully ingested
-                 #     try:
-                 #         os.remove(file_path_str)
-                 #         print(f"Removed temporary file: {filename} from {session_upload_dir_str}")
-                 #     except OSError as rm_err:
-                 #         print(f"Warning: Could not remove temporary file {filename}: {rm_err}")
-                 pass # Current strategy: Leave files in session folders
-                 # --------------------------------------------------------------------
+                 pass # File removal strategy
                  
-        final_message = f"Processing finished for session '{session_id}'. Processed {processed_files_count} new files from session folder, skipped {skipped_files_count}, failed {len(failed_files_list)}."
+        final_message = f"Processing finished for session '{session_id}'. Processed {len(processed_filenames_list)} new files from session folder, skipped {skipped_files_count}, failed {len(failed_files_list)}."
         if failed_files_list:
              final_message += f" Failed files: {', '.join(failed_files_list)}"
         print(final_message)
         
-        return {"message": final_message, "processed_count": processed_files_count, "skipped_count": skipped_files_count, "failed_files": failed_files_list}
+        # --- Return the detailed result dictionary --- 
+        return {"message": final_message, 
+                "processed_count": len(processed_filenames_list),
+                "processed_filenames": processed_filenames_list, # Return the list
+                "skipped_count": skipped_files_count, 
+                "failed_files": failed_files_list}
 
 # Note: You would typically call process_files_for_session from your API endpoint
 #       after potentially getting the Weaviate client instance.

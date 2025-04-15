@@ -3,67 +3,159 @@
   display: inline-flex;
   flex-direction: column;
   justify-content: space-between;
-  background-color: #ffffff;
+  background-color: #f0f4f9;
   padding: 25px 15px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  transition: width 0.3s ease;
+  /* Add transition for smooth collapse/expand */
+  width: 60px;
+  /* Default collapsed width */
 }
 
-.sidebar img {
+.sidebar.extended {
+  width: 250px;
+  /* Expanded width */
+}
+
+.sidebar svg {
   width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex-shrink: 0;
 }
 
 .sidebar .menu {
   display: block;
   margin-left: 10px;
   cursor: pointer;
-  color: #333;
 }
 
 .sidebar .new-chat {
   margin-top: 50px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 15px;
-  background-color: #e0f7fa;
-  border-radius: 14px;
+  padding: 10px;
+  background-color: transparent;
+  border-radius: 50px;
   font-size: 14px;
-  color: #00796b;
+  color: #282828;
   cursor: pointer;
-  transition: background-color 0.3s;
+  height: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+  transition: background-color 0.2s ease;
 }
 
 .sidebar .new-chat:hover {
-  background-color: #b2ebf2;
+  background-color: #e2e6eb;
+}
+
+.sidebar .new-chat p {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+  opacity: 0;
+  max-width: 0;
+  transition: opacity 0.2s ease, max-width 0.2s ease 0.1s;
+}
+
+.sidebar.extended .new-chat p {
+  opacity: 1;
+  max-width: 100%;
+}
+
+.sidebar:not(.extended) .new-chat {
+  gap: 0;
+  justify-content: center;
+  padding: 10px 0;
 }
 
 .sidebar .recent {
   display: flex;
   flex-direction: column;
+  animation: fadeIn 1.5s;
 }
 
-.sidebar .recent_title {
+.sidebar .recent-title {
   margin-top: 30px;
   margin-bottom: 20px;
-  font-weight: bold;
-  color: #555;
 }
 
-.sidebar .recent-entery {
+/* --- Flexbox Alignment for Recent/Bottom Items --- */
+.sidebar .recent-entry,
+.sidebar .bottom-item {
   display: flex;
-  align-items: start;
+  align-items: center;
   gap: 10px;
   padding: 10px;
-  padding-right: 40px;
   border-radius: 50px;
   color: #282828;
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: background-color 0.2s ease;
+  margin-bottom: 5px;
+  height: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  /* Ensure item takes full available width */
+  overflow: hidden;
+  /* Hide overflow for text collapsing */
 }
 
-.sidebar .recent-entery:hover {
-  background-color: #e0e0e0;
+.sidebar .recent-entry p,
+.sidebar .bottom-item p {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+  /* --- Collapse text visually and in layout --- */
+  opacity: 0;
+  max-width: 0;
+  transition: opacity 0.2s ease, max-width 0.2s ease 0.1s;
+  /* Transition both */
+  /* -------------------------------------------- */
 }
+
+/* Show text when sidebar is extended */
+.sidebar.extended .recent-entry p,
+.sidebar.extended .new-chat p,
+.sidebar.extended .bottom-item p {
+  opacity: 1;
+  max-width: 100%;
+  /* Allow text to take space */
+}
+
+/* --- Adjust collapsed item styling --- */
+.sidebar:not(.extended) .recent-entry,
+.sidebar:not(.extended) .new-chat,
+.sidebar:not(.extended) .bottom-item {
+  gap: 10px;
+  /* Maintain consistent gap */
+  padding: 10px;
+  /* Use consistent padding */
+  width: max-content;
+  /* Allow item to shrink to icon size + padding */
+}
+
+/* ----------------------------------- */
+
+.sidebar .recent-entry:hover,
+.sidebar .bottom-item:hover {
+  background-color: #e2e6eb;
+}
+
+/* Active Chat Highlighting */
+.sidebar .recent-entry.active {
+  background-color: #d4d9e0;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------- */
 
 .sidebar .bottom {
   display: flex;
@@ -81,13 +173,6 @@
   color: #004d40;
 }
 
-/* Style for the active chat in the sidebar */
-.sidebar .recent .recent-entry.active {
-  background-color: #e8f0fe;
-  /* Light blue background */
-  border-radius: 5px;
-}
-
 /* Style for new chat and recent entry titles */
 .sidebar .new-chat p,
 .sidebar .recent .recent-title,
@@ -98,12 +183,6 @@
   text-overflow: ellipsis;
   max-width: 100%;
   /* Ensure it fits within the sidebar */
-}
-
-/* Adjust padding/margin if needed for active state */
-.sidebar .recent .recent-entry.active {
-  /* Optional: Adjust padding if background makes it look different */
-  /* padding-left: 8px; */
 }
 
 /* Upload/Process Section */
@@ -148,26 +227,14 @@
   box-shadow: none;
 }
 
-/* Optional: Specific styling for upload/process buttons if needed */
-.upload-button {
-  /* Add specific styles if you want it to look different */
-}
-
-.process-button {
-  /* Add specific styles if you want it to look different */
-  /* Example: Slightly different color */
-  /* background-color: #e8f0fe; */
-  /* color: #1967d2; */
-}
-
 /* Theme Toggle specific styles */
-.theme-toggle img {
+.theme-toggle svg {
   transition: transform 0.3s ease-in-out;
 }
 
-.theme-toggle:hover img {
+.theme-toggle:hover svg {
   transform: rotate(15deg);
-  /* Slight rotation on hover */
+  /* Apply hover effect to SVG */
 }
 
 .theme-toggle p {

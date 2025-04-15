@@ -181,7 +181,9 @@ class ChatResponse(BaseModel):
 
 class ProcessResponse(BaseModel):
     message: str
-    indexed_files: list[str]
+    processed_files: List[str] = [] # List of filenames successfully processed & ingested
+    skipped_count: int = 0
+    failed_files: List[str] = []
 
 class ProcessRequest(BaseModel):
     session_id: str # Add session_id field
@@ -235,50 +237,54 @@ async def upload_documents(session_id: str = Form(...), files: list[UploadFile] 
 
     return {"message": "Files processed for upload.", "filenames_saved": processed_filenames}
 
-@app.post("/api/process")
+@app.post("/api/process", response_model=ProcessResponse)
 async def process_documents(request: ProcessRequest, client: weaviate.Client = Depends(get_weaviate_client())):
     """Endpoint to trigger processing of uploaded documents for a specific session."""
-    session_id = request.session_id # Get session_id from request body
-
-    print(f"Received request to process documents for session: {session_id}")
-    
-    # --- Add Debug Logs --- 
+    session_id = request.session_id
     print(f"DEBUG /api/process: Session ID = {session_id}")
     print(f"DEBUG /api/process: Weaviate client obtained = {client is not None}")
     if not client and not Config.USE_LOCAL_VECTOR_STORE:
         print("ERROR /api/process: Weaviate client is None in non-local mode!")
-        # Raise explicit error if client is missing in Weaviate mode
         raise HTTPException(status_code=503, detail="Weaviate client not available for processing.")
-    # ---------------------
 
     try:
-        # --- Add Debug Log before call --- 
         print(f"DEBUG /api/process: About to call ingest.process_files_for_session for {session_id}")
-        # ---------------------------------
         result = ingest.process_files_for_session(
             session_id=session_id, 
-            client=client # Pass the potentially None client (ingest handles None check for Weaviate mode)
+            client=client 
         )
-        # --- Add Debug Log after call --- 
         print(f"DEBUG /api/process: Call to ingest.process_files_for_session completed for {session_id}")
         print(f"DEBUG /api/process: Result = {result}")
-        # --------------------------------
         
-        # Check result and return appropriate response
-        failed_count = len(result.get("failed_files", []))
+        # --- Construct the response using ProcessResponse model --- 
         processed_count = result.get("processed_count", 0)
         skipped_count = result.get("skipped_count", 0)
-
-        if failed_count > 0 and processed_count == 0 and skipped_count == 0:
+        failed_files_list = result.get("failed_files", [])
+        # --- Assume ingest returns 'processed_filenames' --- 
+        processed_filenames = result.get("processed_filenames", []) 
+        # ---------------------------------------------------
+        
+        # Check for significant failure (all failed, none skipped)
+        if failed_files_list and processed_count == 0 and skipped_count == 0:
              print(f"Processing failed significantly for session {session_id}. Result: {result}")
-             return JSONResponse(status_code=500, content={"detail": result.get("message", "Processing failed for all files.")})
+             # Return 500 with detail (FastAPI handles JSON response)
+             raise HTTPException(status_code=500, detail=result.get("message", "Processing failed for all files."))
         
         print(f"Processing finished for session {session_id}. Result: {result}")
-        return {"message": result.get("message", "Processing completed.")}
+        # Return successful response including the list of processed files
+        return ProcessResponse(
+            message=result.get("message", "Processing completed."),
+            processed_files=processed_filenames, # Include the list here
+            skipped_count=skipped_count,
+            failed_files=failed_files_list
+        )
+        # ------------------------------------------------------
         
     except Exception as e:
+        # Catch errors from ingest or within this endpoint
         print(f"!!!!!!!! UNEXPECTED ERROR in /api/process endpoint for {session_id}: {e} !!!!!!!!")
         traceback.print_exc()
+        # Re-raise for FastAPI's default 500 handling
         raise HTTPException(status_code=500, detail=f"Internal server error during processing endpoint: {e}")
 
 @app.post("/api/chat")

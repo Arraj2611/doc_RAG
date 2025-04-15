@@ -1,83 +1,87 @@
-import bcrypt from "bcrypt"; // Library for hashing passwords
-
-import jwt from "jsonwebtoken"; // Library for creating JSON Web Tokens
-import userModel from "../models/userModel.js"; // Importing the user model
+import bcrypt from 'bcryptjs'; // Use import
+import jwt from 'jsonwebtoken'; // Use import
+import User from '../models/User.js'; // Use import and add .js extension
+import 'dotenv/config'; // Use import for dotenv config
 
 // Register user
-const registerUser = async (req, res) => {
-  const { name, email, password, age } = req.body;
+export const registerUser = async (req, res) => { // Use export
+  const { name, email, password } = req.body; // <<< Removed age
   try {
     // Check if user already exists
-    const existingUser = await userModel.findOne({ email });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      // Respond with a 400 status if user already exists
-      return res.status(400).send({ message: "User already exists" });
+      return res.status(400).json({ message: "User already exists" }); // Use .json()
     }
 
-    // Generate salt for hashing the password
+    // Generate salt
     const salt = await bcrypt.genSalt(10);
-    // Hash the password using the generated salt
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create a new user object with hashed password
-    const newUser = new userModel({
+    // Create new user
+    const newUser = new User({
       name,
       email,
       password: hashedPassword,
-      age,
+      // age is removed
     });
 
-    // Save the new user to the database
+    // Save user
     const savedUser = await newUser.save();
 
-    // Respond with a 201 status and the saved user object
-    res.status(201).send({ message: "User Registered", user: savedUser });
-  } catch (err) {
-    console.error(err); // Log the error for debugging
-    // Respond with a 500 status in case of server error
-    res.status(500).send({ message: "Some Problem" });
-  }
-};
-
-
-
-// Login user
-const loginUser = async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    // Find the user by email
-    const user = await userModel.findOne({ email });
-    if (!user) {
-      // Respond with a 404 status if user is not found
-      return res.status(404).send({ message: "Invalid Email" });
-    }
-
-    // Compare the provided password with the hashed password in the database
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      // Respond with a 403 status if passwords do not match
-      return res.status(403).send({ message: "Incorrect password" });
-    }
-
-    // Generate a JSON Web Token
-    const token = jwt.sign(
-      { email: user.email, userId: user._id },
-      process.env.JWT_SECRET || "nutrifyapp", // Use environment variable for JWT secret
-      { expiresIn: "1h" } // Token expires in 1 hour
-    );
-
-    // Respond with the token and user details
-    res.send({
-      message: "Login Success",
-      token,
-      userId: user._id,
-      name: user.name,
+    // Respond (excluding password)
+    res.status(201).json({ // Use .json()
+      message: "User Registered",
+      user: {
+        id: savedUser._id,
+        name: savedUser.name,
+        email: savedUser.email,
+      },
     });
   } catch (err) {
-    console.error(err); // Log the error for debugging
-    // Respond with a 500 status in case of server error
-    res.status(500).send({ message: "Some Problem" });
+    console.error('Registration Error:', err); // Log the error
+    res.status(500).json({ message: "Server error during registration" }); // Use .json()
   }
 };
 
-export default { registerUser, loginUser }; // Export the register and login functions
+// Login user
+export const loginUser = async (req, res) => { // Use export
+  const { email, password } = req.body;
+  try {
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" }); // 401 Unauthorized
+    }
+
+    // Compare passwords
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" }); // 401 Unauthorized
+    }
+
+    // Generate JWT
+    const payload = {
+      id: user._id, // <<< Use id for middleware
+    };
+
+    const token = jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" } // Consider a longer expiration? e.g., '7d'
+    );
+
+    // Respond with token and user details (excluding password)
+    res.json({ // Use .json()
+      message: "Login Success",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (err) {
+    console.error('Login Error:', err); // Log the error
+    res.status(500).json({ message: "Server error during login" }); // Use .json()
+  }
+};

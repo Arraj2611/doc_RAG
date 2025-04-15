@@ -352,6 +352,7 @@
   background: -webkit-linear-gradient(16deg, #4b90ff, #ff5546);
   -webkit-text-fill-color: transparent;
   -webkit-background-clip: text;
+  background-clip: text;
 }
 
 .main .cards {
@@ -393,16 +394,50 @@
   font-size: 17px;
 }
 
+/* --- Center Main Bottom Content --- */
 .main-bottom {
   position: absolute;
   bottom: 0;
-  width: 100%;
+  /* width: 100%; */
+  /* Remove fixed width */
+  left: 50%;
+  /* Center horizontally */
+  transform: translateX(-50%);
+  /* Fine-tune centering */
+  width: 90%;
+  /* Use percentage width */
   max-width: 900px;
-  padding: 0px 20px;
-  margin: auto;
+  /* Keep max width */
+  padding: 0px 20px 15px 20px;
+  /* Adjust padding, add bottom */
+  /* margin: auto; */
+  /* Remove margin auto */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Center children horizontally */
+}
+
+.process-trigger-container {
+  /* Ensure this takes appropriate width */
+  width: 100%;
+  /* Make button container take width */
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+  /* Add space below button */
+}
+
+.process-button-main {
+  /* Adjust width if needed, e.g., max-content or fixed */
+  width: max-content;
+  padding: 8px 20px;
+  /* Adjust padding */
 }
 
 .search-box {
+  /* Make search box take full width of its centered container */
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -412,6 +447,8 @@
   border-radius: 50px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
+
+/* --------------------------------- */
 
 .search-box img {
   width: 24px;
@@ -435,11 +472,15 @@
 }
 
 .main .bottom-info {
+  /* Already centered text, width adjusts automatically */
   font-size: 13px;
-  margin: 15px auto;
+  margin: 15px auto 0 auto;
+  /* Adjust margin */
   text-align: center;
   font-weight: 300;
   color: #777;
+  width: 100%;
+  /* Ensure it takes width for centering */
 }
 
 .result {
@@ -716,7 +757,7 @@
   color: #1a73e8;
 }
 
-.sidebar-content {}
+
 
 .sidebar-source-meta {
   font-size: 0.8em;
@@ -752,6 +793,7 @@
   padding: 10px 20px;
   display: flex;
   flex-direction: column;
+  gap: 20px;
 }
 
 .message {
@@ -835,7 +877,7 @@
   cursor: not-allowed;
 }
 
-.send-icon {}
+
 
 .process-trigger-container {
   padding: 0px 20px 10px 20px;
@@ -882,6 +924,7 @@ body.dark .main .greet span {
   /* Specificity: body.dark -> .main -> .greet -> span */
   background: -webkit-linear-gradient(16deg, #a3a6ab, #dde0e2);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -997,3 +1040,28 @@ body.dark .sources-sidebar {
 }
 
 /* ... other sources-sidebar dark styles ... */
+
+/* --- Processed Files Display --- */
+.processed-files-container {
+  padding: 10px 15px;
+  margin: 10px auto;
+  max-width: 900px;
+  /* Match chat width */
+  background-color: #e8f0fe;
+  /* A light blue background */
+  border-left: 4px solid #1a73e8;
+  /* Blue left border */
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #3c4043;
+}
+
+.processed-files-container p {
+  margin: 0;
+}
+
+.processed-files-container strong {
+  margin-right: 5px;
+}
+
+/* ----------------------------- */

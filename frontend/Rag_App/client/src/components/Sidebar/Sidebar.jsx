@@ -1,8 +1,14 @@
 import React, { useState, useContext } from "react";
 import "./Sidebar.css";
-import { assets } from "../../assets/assets";
 import { Context } from "../../context/Context";
-import { ThemeContext } from "../../context/ThemeContext";
+import MenuIcon from '@mui/icons-material/Menu';
+import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
+import MessageOutlinedIcon from '@mui/icons-material/MessageOutlined';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import HistoryIcon from '@mui/icons-material/History';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
 
 const Sidebar = () => {
   const [extended, setExtended] = useState(false);
@@ -12,59 +18,71 @@ const Sidebar = () => {
     currentSessionId,
     startNewChat,
     selectChat,
+    theme,
+    toggleTheme
   } = useContext(Context);
 
-  const { theme, toggleTheme } = useContext(ThemeContext);
+  const toggleExtended = () => {
+    setExtended((prev) => !prev);
+  };
 
   return (
     <div className={`sidebar ${extended ? "extended" : ""}`}>
       <div className="top">
-        <img
-          onClick={() => setExtended((prev) => !prev)}
+        <MenuIcon
+          onClick={toggleExtended}
           className="menu"
-          src={assets.menu_icon}
-          alt="Menu"
         />
         <div onClick={startNewChat} className="new-chat">
-          <img src={assets.plus_icon} alt="New Chat" />
-          {extended ? <p>New Chat</p> : null}
+          <AddCommentOutlinedIcon />
+          <p>New Chat</p>
         </div>
-        {extended && chatSessions && chatSessions.length > 0 ? (
+        {extended && (
           <div className="recent">
-            <p className="recent-title">Recent</p>
-            {chatSessions.map((session) => (
+            <p className="recent-title">Recent Chats</p>
+            {Array.isArray(chatSessions) && chatSessions.map((session) => (
               <div
                 key={session.id}
-                onClick={() => selectChat(session.id)}
                 className={`recent-entry ${session.id === currentSessionId ? 'active' : ''}`}
+                onClick={() => selectChat(session.id)}
               >
-                <img src={assets.message_icon} alt="Chat" />
-                <p>{session.title || "Untitled Chat"}</p>
+                <MessageOutlinedIcon />
+                <p>{session.title}</p>
               </div>
             ))}
           </div>
-        ) : null}
+        )}
+        {!extended && Array.isArray(chatSessions) && chatSessions.length > 0 && (
+          <div className="recent collapsed">
+            {chatSessions.slice(0, 5).map((session) => (
+              <div
+                key={session.id}
+                className={`recent-entry ${session.id === currentSessionId ? 'active' : ''}`}
+                onClick={() => selectChat(session.id)}
+                title={session.title}
+              >
+                <MessageOutlinedIcon />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
       <div className="bottom">
         <div className="bottom-item recent-entry">
-          <img src={assets.question_icon} alt="Help" />
-          {extended ? <p>Help</p> : null}
+          <HelpOutlineIcon />
+          <p>Help</p>
         </div>
-
         <div className="bottom-item recent-entry">
-          <img src={assets.history_icon} alt="Activity" />
-          {extended ? <p>Activity</p> : null}
+          <HistoryIcon />
+          <p>Activity</p>
         </div>
-
-        <div onClick={toggleTheme} className="bottom-item recent-entry theme-toggle" title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}>
-          <img src={theme === 'light' ? assets.bulb_icon : assets.setting_icon} alt="Toggle Theme" />
-          {extended ? <p>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</p> : null}
+        <div className="bottom-item recent-entry theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}>
+          {theme === 'light' ? <Brightness4Icon /> : <Brightness7Icon />}
+          <p>Theme</p>
         </div>
-
         <div className="bottom-item recent-entry">
-          <img src={assets.setting_icon} alt="Settings" />
-          {extended ? <p>Settings</p> : null}
+          <SettingsOutlinedIcon />
+          <p>Settings</p>
         </div>
       </div>
     </div>
@@ -72,69 +90,3 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
-
-
-
-// import React, { useState, useEffect } from "react";
-// import { useLocation } from "react-router-dom";
-// import { ToastContainer, toast } from "react-toastify";
-// import "react-toastify/dist/ReactToastify.css";
-// import "./Sidebar.css";
-// import { assets } from "../../assets/assets";
-
-// const Sidebar = () => {
-//   const [extended, setExtended] = useState(false);
-//   const location = useLocation();
-
-//   useEffect(() => {
-//     // Show success message if passed from login
-//     if (location.state?.toastMessage) {
-//       toast.success(location.state.toastMessage);
-//     }
-//   }, [location.state]);
-
-//   return (
-//     <div className={`sidebar ${extended ? "extended" : ""}`}>
-//       <div className="top">
-//         <img
-//           onClick={() => setExtended((prev) => !prev)}
-//           className="menu"
-//           src={assets.menu_icon}
-//           alt="Menu"
-//         />
-//         <div className="new-chat">
-//           <img src={assets.plus_icon} alt="New Chat" />
-//           {extended && <p>New Chat</p>}
-//         </div>
-//         {extended && (
-//           <div className="recent">
-//             <p className="recent_title">Recent</p>
-//             <div className="recent-entry">
-//               <img src={assets.message_icon} alt="Message" />
-//               <p>What Is React..</p>
-//             </div>
-//           </div>
-//         )}
-//       </div>
-
-//       <div className="bottom">
-//         <div className="bottom-item recent-entry">
-//           <img src={assets.question_icon} alt="Help" />
-//           {extended && <p>Help</p>}
-//         </div>
-//         <div className="bottom-item recent-entry">
-//           <img src={assets.history_icon} alt="Activity" />
-//           {extended && <p>Activity</p>}
-//         </div>
-//         <div className="bottom-item recent-entry">
-//           <img src={assets.setting_icon} alt="Settings" />
-//           {extended && <p>Settings</p>}
-//         </div>
-//       </div>
-
-//       <ToastContainer />
-//     </div>
-//   );
-// };
-
-// export default Sidebar;

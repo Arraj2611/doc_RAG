@@ -2,9 +2,12 @@
 import React, { useContext, useState, useEffect, useRef } from "react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 import "./Main.css";
 import { assets } from "../../assets/assets";
 import { Context } from "../../context/Context";
+import { useNavigate } from "react-router-dom";
 
 // Refined SourcesSidebar component
 const SourcesSidebar = ({ isOpen, sources, onClose }) => {
@@ -86,7 +89,10 @@ const Main = () => {
     processUploadedFiles, // Get from context
     lastUploadResult,    // Get from context
     isProcessing,       // Get from context
-    theme               // Get theme from context
+    theme,               // Get theme from context
+    processedFiles,      // Get processed files list
+    user, // <<< Get user object from context
+    logout // <<< Get logout function from context
   } = useContext(Context);
 
   // --- Define local state and refs AFTER context --- 
@@ -95,93 +101,109 @@ const Main = () => {
   const fileInputRef = useRef(null);
   // -------------------------------------------------
 
+  // --- Hooks ---
+  const navigate = useNavigate(); // Hook for programmatic navigation
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, currentTurnResult]);
 
   return (
     <div className="main">
-      <div className="nav">
-        <p>Rag App</p>
-        <img src={assets.user_icon} alt="User icon" />
-      </div>
-      <div className="main-container">
-        {/* Show welcome screen only if there's NO history for the current session */}
-        {!chatHistory || chatHistory.length === 0 ? (
-          <>
-            <div className="greet">
-              <p>
-                <span>Hello.........</span>
-              </p>
-              <p>Kya Halchalll ?</p>
-            </div>
-            <div className="cards">
-              <div className="card">
-                <p>Suggest beautiful places to see on an upcoming road trip</p>
-                <img src={assets.compass_icon} alt="Compass icon" />
+      {/* --- Sidebar for Sources --- */}
+      <SourcesSidebar
+        isOpen={isSourcesSidebarOpen}
+        sources={currentTurnSources}
+        onClose={() => setIsSourcesSidebarOpen(false)}
+      />
+      {/* ------------------------- */}
+
+      <div className="main-content-area"> {/* Wrap main content */}
+        <div className="nav">
+          {/* --- Display Username in Nav (Optional) --- */}
+          <p>Rag App {user?.name ? ` - Welcome, ${user.name}` : ""}</p>
+          {/* --------------------------------------- */}
+          {/* --- Add onClick handler to profile image --- */}
+          <img
+            src={assets.user_icon}
+            alt="User profile"
+            title="Logout"
+            onClick={logout} // <<< Call logout function on click
+          />
+          {/* ----------------------------------------- */}
+        </div>
+        <div className="main-container">
+          {/* Show welcome screen only if there's NO history for the current session */}
+          {!chatHistory || chatHistory.length === 0 ? (
+            <>
+              <div className="greet">
+                <p>
+                  {/* --- Dynamic Greeting --- */}
+                  <span>Hello{user?.name ? `, ${user.name}` : ''}.</span>
+                  {/* ---------------------- */}
+                </p>
+                <p>How can I help you today?</p> {/* Keep generic question */}
               </div>
-              <div className="card">
-                <p>Briefly summarize this concept: urban planning</p>
-                <img src={assets.bulb_icon} alt="Lightbulb icon" />
-              </div>
-              <div className="card">
-                <p>Brainstorm team bonding activities for our work retreat</p>
-                <img src={assets.message_icon} alt="Message icon" />
-              </div>
-              <div className="card">
-                <p>Improve the readability of the following code</p>
-                <img src={assets.code_icon} alt="Code icon" />
-              </div>
-            </div>
-          </>
-        ) : (
-          // Display chat history
-          <div className="chat-history">
-            {chatHistory.map((message, index) => (
-              <div key={index} className={`message ${message.role}`}>
-                <img src={message.role === 'user' ? assets.user_icon : assets.gemini_icon} alt={message.role} />
-                <div className="markdown-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              <div className="cards">
+                <div className="card" onClick={() => setInput("Summarize the key points from the uploaded documents.")}>
+                  <p>Summarize the key points from the uploaded documents.</p>
+                  <img src={assets.compass_icon} alt="Summary icon" />
+                </div>
+                <div className="card" onClick={() => setInput("What is the main conclusion mentioned in the files?")}>
+                  <p>What is the main conclusion mentioned in the files?</p>
+                  <img src={assets.bulb_icon} alt="Conclusion icon" />
+                </div>
+                <div className="card" onClick={() => setInput("Extract the main arguments presented in the documents.")}>
+                  <p>Extract the main arguments presented in the documents.</p>
+                  <img src={assets.message_icon} alt="Arguments icon" />
+                </div>
+                <div className="card" onClick={() => setInput("Based on the documents, explain the concept of...")}>
+                  <p>Based on the documents, explain the concept of...</p>
+                  <img src={assets.code_icon} alt="Concept icon" />
                 </div>
               </div>
-            ))}
-
-            {/* Display the current assistant response while loading */}
-            {loading && (
-              <div className="message assistant">
-                <img src={assets.gemini_icon} alt="assistant" />
-                <div className="markdown-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentTurnResult}</ReactMarkdown>
-                  {/* Optional: Add a blinking cursor or indicator */}
-                  <span className="loading-cursor">▋</span>
+            </>
+          ) : (
+            // Display chat history
+            <div className="chat-history">
+              {chatHistory.map((message, index) => (
+                <div key={index} className={`message ${message.role}`}>
+                  <img src={message.role === 'user' ? assets.user_icon : assets.gemini_icon} alt={message.role} />
+                  <div className="markdown-content">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message.content}</ReactMarkdown>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
 
-            {/* Display sources button for the last completed turn */}
-            {!loading && currentTurnSources && currentTurnSources.length > 0 && (
-              <div className="sources-button-container">
-                <button
-                  className="sources-button"
-                  onClick={() => setIsSourcesSidebarOpen(true)}
-                >
-                  Sources ({currentTurnSources.length})
-                </button>
-              </div>
-            )}
+              {/* Display the current assistant response while loading */}
+              {loading && (
+                <div className="message assistant">
+                  <img src={assets.gemini_icon} alt="assistant" />
+                  <div className="markdown-content">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{currentTurnResult}</ReactMarkdown>
+                    {/* Optional: Add a blinking cursor or indicator */}
+                    <span className="loading-cursor">▋</span>
+                  </div>
+                </div>
+              )}
 
-            {/* Empty div to act as scroll target */}
-            <div ref={chatEndRef} />
-          </div>
-        )}
+              {/* Display sources button for the last completed turn */}
+              {!loading && currentTurnSources && currentTurnSources.length > 0 && (
+                <div className="sources-button-container">
+                  <button
+                    className="sources-button"
+                    onClick={() => setIsSourcesSidebarOpen(true)}
+                  >
+                    Sources ({currentTurnSources.length})
+                  </button>
+                </div>
+              )}
 
-        {/* --- Render Sources Sidebar --- */}
-        <SourcesSidebar
-          isOpen={isSourcesSidebarOpen}
-          sources={currentTurnSources}
-          onClose={() => setIsSourcesSidebarOpen(false)}
-        />
-        {/* --- End Render Sources Sidebar --- */}
+              {/* Empty div to act as scroll target */}
+              <div ref={chatEndRef} />
+            </div>
+          )}
+        </div>
 
         <div className="main-bottom">
           {/* --- Conditional Process Button --- */}
@@ -197,6 +219,15 @@ const Main = () => {
             </div>
           )}
           {/* --------------------------------- */}
+
+          {/* --- ADD Processed Files Display HERE --- */}
+          {processedFiles && processedFiles.length > 0 && (
+            <div className="processed-files-container">
+              {/* Simple display for now */}
+              <p><strong>Context:</strong> {processedFiles.join(", ")}</p>
+            </div>
+          )}
+          {/* ----------------------------------------- */}
 
           <div className="search-box">
             {/* Hidden File Input - Moved Here */}
@@ -253,7 +284,7 @@ const Main = () => {
             AI may display inaccurate info. Check responses.
           </p>
         </div>
-      </div>
+      </div> {/* End main-content-area */}
     </div>
   );
 };

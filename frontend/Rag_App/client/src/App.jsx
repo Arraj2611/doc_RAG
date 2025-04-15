@@ -26,13 +26,17 @@ const AppLayout = () => {
 
 // Wrapper for protected routes
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated } = useContext(Context);
+  const { isAuthenticated, isAuthLoading } = useContext(Context);
+
+  if (isAuthLoading) {
+    return <div>Loading Authentication...</div>;
+  }
+
   if (!isAuthenticated) {
-    // Redirect them to the /login page, but save the current location they were
-    // trying to go to when they were redirected.
     return <Navigate to="/login" replace />;
   }
-  return children ? children : <Outlet />; // Render children or Outlet for nested routes
+
+  return children ? children : <Outlet />;
 };
 
 const App = () => {

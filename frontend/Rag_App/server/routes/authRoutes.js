@@ -1,12 +1,13 @@
-import express from "express";
-import authController from "../controllers/authController.js";
+import express from 'express';
+// Import named exports from controller
+import { registerUser, loginUser } from '../controllers/authController.js';
 
 const router = express.Router();
 
 // Register user route
-router.post("/register", authController.registerUser);
+router.post("/register", registerUser);
 
 // Login user route
-router.post("/login", authController.loginUser);
+router.post("/login", loginUser);
 
-export default router;
+export default router; // Use ES Module export

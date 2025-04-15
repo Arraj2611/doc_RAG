@@ -81,11 +81,25 @@ import { useNavigate } from 'react-router-dom'; // Import useNavigate
 
 export const Context = createContext();
 
-// Define backend URL (adjust if your FastAPI runs elsewhere)
-const RAG_BACKEND_URL = "http://localhost:8088";
+// Define backend URLs
+const RAG_BACKEND_URL = "http://localhost:8088"; // Your Python RAG API
+const NODE_BACKEND_URL = "http://localhost:3001"; // Your Node.js Auth/Chat API
 
-// TODO: Add NODE_BACKEND_URL later when implementing DB persistence
-// const NODE_BACKEND_URL = "http://localhost:3001"; 
+// Create an Axios instance for Node backend calls
+const nodeApi = axios.create({
+  baseURL: NODE_BACKEND_URL,
+});
+
+// Add an interceptor to include the auth token in requests
+nodeApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem('authToken');
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
 
 const ContextProvider = (props) => {
   // --- State Variables ---
@@ -110,36 +124,65 @@ const ContextProvider = (props) => {
   const [lastProcessResult, setLastProcessResult] = useState(null); // Store result of last process call
 
   // --- NEW: Authentication State ---
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    // Check for a token in localStorage on initial load
-    return !!localStorage.getItem('authToken');
-  });
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('authToken'));
+  const [isAuthLoading, setIsAuthLoading] = useState(true); // <<< Add loading state for initial auth check
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // <<< Initialize as false
+  const [authToken, setAuthToken] = useState(null); // <<< Initialize as null
   const [user, setUser] = useState(null); // Optional: store user info
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light"); // Load theme from storage
-  // --------------------------------
+
+  // --- NEW: State for Processed Files --- 
+  const [processedFiles, setProcessedFiles] = useState([]);
+  // -------------------------------------
 
   // --- Hooks ---
   const navigate = useNavigate(); // Hook for programmatic navigation
 
   // --- Effects --- 
   useEffect(() => {
-    // Redirect based on auth status on initial load or auth change
-    if (isAuthenticated && currentSessionId === null) {
-      startNewChat(); // Start a chat if authenticated and no session
-      // Fetch user sessions from Node backend later?
-    }
-    // Maybe redirect to /login if token expires or becomes invalid?
-  }, [isAuthenticated]);
+    // Initial Authentication Check on Mount
+    const checkAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        console.log("Token found in storage, attempting validation...");
+        // Optional: Verify token with backend here if needed
+        // For now, just assume token presence means authenticated
+        try {
+          // Example: Verify token with a backend endpoint (if you have one)
+          // const response = await nodeApi.get('/api/auth/verify'); // Requires a backend route
+          // setUser(response.data.user);
+          // setAuthToken(token);
+          // setIsAuthenticated(true);
+
+          // --- Simple check (no backend verification) ---
+          setAuthToken(token);
+          setIsAuthenticated(true);
+          // Fetch user data if needed (can be added to login response later)
+          // setUser({ name: 'User from Token', email: '... ' });
+          console.log("Simple token check successful.");
+          // ----
+
+        } catch (error) {
+          console.error("Token validation failed:", error);
+          localStorage.removeItem('authToken'); // Remove invalid token
+          setIsAuthenticated(false);
+          setAuthToken(null);
+          setUser(null);
+        }
+      } else {
+        console.log("No auth token found in local storage.");
+      }
+      setIsAuthLoading(false); // <<< Authentication check complete
+    };
+
+    checkAuth();
+  }, []); // <<< Empty dependency array ensures this runs only once on mount
 
   useEffect(() => {
-    // Remove existing theme classes
+    // Theme Management
     document.body.classList.remove('light', 'dark');
-    // Add the current theme class
     document.body.classList.add(theme);
-    // Persist theme choice
     localStorage.setItem("theme", theme);
-  }, [theme]); // Dependency array ensures this runs when theme changes
+  }, [theme]);
 
   // --- Helper Functions ---
   const generateChatTitle = (firstMessage) => {
@@ -148,91 +191,186 @@ const ContextProvider = (props) => {
     return words.slice(0, 5).join(' ') + (words.length > 5 ? '...' : '');
   };
 
-  // --- Core Functions ---
-  const startNewChat = () => {
-    const newSessionId = uuidv4();
-    const newSession = { id: newSessionId, title: "New Chat" };
-
-    console.log("Starting new chat, session ID:", newSessionId);
-    setCurrentSessionId(newSessionId);
-    setChatHistory([]); // Clear message history for the new chat
-    setCurrentTurnResult(""); // Clear results from previous chat
-    setCurrentTurnSources([]); // Clear sources
-    setShowResult(false); // Show welcome screen
-    setLoading(false);
-    setInput("");
-
-    // Add to the list of sessions for the sidebar (prepend for newest first)
-    setChatSessions(prev => [newSession, ...prev]);
-
-    // TODO: Persist this new session to the Node.js backend later
+  // --- Helper: Update History & Save to Backend ---
+  const saveMessagesToBackend = async (sessionId, userMessage, assistantResponse) => {
+    if (!sessionId || !userMessage || assistantResponse === undefined) {
+      console.error("Missing data for saving messages to backend.");
+      return;
+    }
+    const assistantMessage = { role: "assistant", content: assistantResponse };
+    try {
+      console.log(`Saving messages for session ${sessionId} to backend...`);
+      await nodeApi.put(`/api/chats/${sessionId}`, {
+        messages: [userMessage, assistantMessage]
+      });
+      console.log(`Messages saved successfully for session ${sessionId}.`);
+    } catch (error) {
+      console.error("Error saving messages to backend:", error.response?.data?.message || error.message);
+      toast.error("Failed to save chat history.");
+    }
   };
 
-  const selectChat = (sessionId) => {
-    if (sessionId === currentSessionId) return; // Already selected
+  // --- API Interaction Functions ---
+  const fetchUserChatSessions = useCallback(async () => {
+    if (!isAuthenticated) return; // Don't fetch if not logged in
+    console.log("Fetching user chat sessions...");
+    try {
+      const response = await nodeApi.get('/api/chats');
+      // Map backend response to frontend state structure if necessary
+      // Assuming backend returns [{ sessionId, title, ... }]
+      const sessions = response.data.map(s => ({ id: s.sessionId, title: s.title, ...s }));
+      console.log("Fetched sessions:", sessions);
+      setChatSessions(sessions);
 
-    console.log("Selecting chat, session ID:", sessionId);
-    const selectedSession = chatSessions.find(s => s.id === sessionId);
-    if (selectedSession) {
-      setCurrentSessionId(sessionId);
-      // TODO: Fetch history for this sessionId from Node.js backend later
-      // For now, just clear it (or load from a temporary in-memory store if needed)
+      // If no sessions exist, start a new one automatically
+      if (sessions.length === 0) {
+        console.log("No existing sessions found, starting a new chat.");
+        await startNewChat(false); // Start new chat without clearing existing (as there are none)
+      } else if (!currentSessionId || !sessions.some(s => s.id === currentSessionId)) {
+        // If no session is selected, or selected is invalid, select the latest one
+        console.log("Selecting the latest chat session:", sessions[0].id);
+        await selectChat(sessions[0].id);
+      }
+      return sessions; // Return fetched sessions
+    } catch (error) {
+      console.error("Error fetching chat sessions:", error.response?.data?.message || error.message);
+      if (error.response?.status === 401) {
+        // If unauthorized (token expired/invalid), log out
+        logout();
+      } else {
+        toast.error("Failed to load chat sessions.");
+      }
+      return []; // Return empty array on error
+    }
+  }, [isAuthenticated, currentSessionId]); // Dependency: re-fetch if auth state changes
+
+  // --- Core Functions ---
+  const startNewChat = useCallback(async (clearExistingSessions = true) => {
+    const newSessionId = uuidv4();
+    const newSessionTitle = "New Chat"; // Default title
+    console.log("Attempting to start new chat, generated ID:", newSessionId);
+
+    try {
+      // 1. Create session on the Node backend first
+      const response = await nodeApi.post('/api/chats', {
+        sessionId: newSessionId,
+        title: newSessionTitle // Send default title
+      });
+
+      // 2. On backend success, update frontend state
+      const createdSession = { id: response.data.sessionId, title: response.data.title, ...response.data }; // Use data returned from backend
+      console.log("Backend session created:", createdSession);
+
+      if (clearExistingSessions) {
+        setChatSessions(prev => [createdSession, ...prev]);
+      } else {
+        // If called because no sessions existed, just set this as the only session
+        setChatSessions([createdSession]);
+      }
+      setCurrentSessionId(createdSession.id);
       setChatHistory([]);
       setCurrentTurnResult("");
       setCurrentTurnSources([]);
-      setShowResult(false); // Reset view
+      setShowResult(false);
       setLoading(false);
       setInput("");
-    } else {
-      console.error("Selected session ID not found:", sessionId);
-      // Optionally start a new chat or show an error
-    }
-  };
+      setProcessedFiles([]);
+      setLastUploadResult(null);
+      setLastProcessResult(null);
 
-  // Refactored onSent to handle history and session ID
+      console.log("Frontend state updated for new chat:", createdSession.id);
+
+    } catch (error) {
+      console.error("Error creating new chat session on backend:", error.response?.data?.message || error.message);
+      toast.error("Failed to start new chat. Please try again.");
+      // Handle specific errors e.g., 401 Unauthorized
+      if (error.response?.status === 401) {
+        logout();
+      }
+    }
+  }, []); // No dependencies needed if it doesn't rely on changing state directly
+
+  const selectChat = useCallback(async (sessionId) => {
+    if (!sessionId || sessionId === currentSessionId) return; // Already selected or invalid ID
+
+    console.log("Selecting chat, session ID:", sessionId);
+    setLoading(true); // Indicate loading state while fetching history
+    setCurrentSessionId(sessionId);
+    setChatHistory([]); // Clear old history immediately
+    setCurrentTurnResult("");
+    setCurrentTurnSources([]);
+    setInput("");
+    setProcessedFiles([]);
+    setLastUploadResult(null);
+    setLastProcessResult(null);
+
+    try {
+      // Fetch history for this sessionId from Node.js backend
+      const response = await nodeApi.get(`/api/chats/${sessionId}`);
+      const fetchedHistory = response.data; // Assuming backend returns the history array directly
+      console.log(`Fetched history for ${sessionId}:`, fetchedHistory);
+
+      setChatHistory(fetchedHistory || []); // Ensure it's an array
+      setShowResult(fetchedHistory && fetchedHistory.length > 0); // Show result area if history exists
+
+    } catch (error) {
+      console.error(`Error fetching chat history for ${sessionId}:`, error.response?.data?.message || error.message);
+      toast.error("Failed to load chat history.");
+      // Handle specific errors e.g., 401 Unauthorized
+      if (error.response?.status === 401) {
+        logout();
+      }
+      // Optionally reset to a default state or show error message in chat area
+      setShowResult(false);
+    } finally {
+      setLoading(false); // Stop loading indicator
+    }
+  }, [currentSessionId]); // Dependency on currentSessionId to prevent re-fetching same chat
+
   const onSent = useCallback(async (promptToSend) => {
     const currentPrompt = promptToSend || input;
-    if (!currentPrompt || !currentSessionId) return; // Need prompt and session
+    if (!currentPrompt || !currentSessionId) {
+      console.warn("Prompt or Session ID missing, cannot send.");
+      return;
+    }
 
     const userMessage = { role: "user", content: currentPrompt };
-    const currentHistory = [...chatHistory, userMessage]; // Include the new user message
+    const updatedHistory = [...chatHistory, userMessage]; // Temporary history for UI update
 
-    // Update history state immediately for UI responsiveness
-    setChatHistory(currentHistory);
-
-    setCurrentTurnResult(""); // Clear previous turn results
+    // Update UI immediately
+    setChatHistory(updatedHistory);
+    setCurrentTurnResult("");
     setCurrentTurnSources([]);
     setLoading(true);
     setShowResult(true);
-    setInput(""); // Clear input field
+    setInput("");
 
-    // --- Generate Title for New Chats --- 
-    if (currentHistory.length === 1) { // Only user message exists
-      const newTitle = generateChatTitle(currentPrompt);
-      // Update title in the sessions list
-      setChatSessions(prev => prev.map(s =>
-        s.id === currentSessionId ? { ...s, title: newTitle } : s
-      ));
-      // TODO: Update title in Node.js backend later
-    }
+    // --- Update Title for New Chats (If needed) ---
+    // Check if this is the *first* message in a session *after* it was created
+    const currentSession = chatSessions.find(s => s.id === currentSessionId);
+    const isFirstMessageInSession = chatHistory.length === 0; // Check *before* adding user message to state if backend handles title update
 
-    // Store assistant response chunks here
-    let assistantResponse = "";
+    // We might let the backend handle title updates based on the first few messages later.
+    // For now, title is set on creation ('New Chat') or potentially updated manually.
+
+    // --- Call RAG Backend (Streaming) ---
+    let assistantResponse = ""; // Accumulate response chunks
+    let finalSources = []; // Accumulate sources
 
     try {
-      console.log(`SSE Connect: Session='${currentSessionId}', History Length=${currentHistory.length}`);
-
+      console.log(`SSE Connect: Session='${currentSessionId}', Sending Prompt.`);
       await fetchEventSource(`${RAG_BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
+          // Add Auth headers if RAG API requires them
         },
         body: JSON.stringify({
           query: currentPrompt,
-          session_id: currentSessionId, // Use current session ID
-          // TODO: Send actual chat_history when backend supports it
-          // chat_history: currentHistory.slice(0, -1) // Send history *before* current prompt
+          session_id: currentSessionId,
+          // Pass history if RAG backend uses it. Ensure format matches backend expectations.
+          // chat_history: updatedHistory.slice(0, -1) // Example: Send history *before* current prompt
         }),
 
         onmessage(event) {
@@ -240,241 +378,116 @@ const ContextProvider = (props) => {
             console.log("SSE onmessage: Received empty event data.");
             return;
           }
-          console.log("SSE onmessage: Raw data received:", event.data);
-
+          // console.log("SSE onmessage: Raw data received:", event.data); // Debugging
           try {
             const parsedData = JSON.parse(event.data);
-            console.log("SSE onmessage: Parsed data:", parsedData);
+            // console.log("SSE onmessage: Parsed data:", parsedData); // Debugging
 
             if (parsedData.type === 'answer_chunk') {
-              console.log("SSE onmessage: Handling answer_chunk:", parsedData.content);
-              assistantResponse += parsedData.content;
-              setCurrentTurnResult(prev => prev + parsedData.content);
-              console.log("SSE onmessage: currentTurnResult updated.");
+              const chunk = parsedData.content || "";
+              // console.log("SSE onmessage: Handling answer_chunk:", chunk); // Debugging
+              assistantResponse += chunk;
+              setCurrentTurnResult(prev => prev + chunk); // Stream to UI
+              // console.log("SSE onmessage: currentTurnResult updated."); // Debugging
             } else if (parsedData.type === 'sources') {
-              console.log("SSE onmessage: Handling sources:", parsedData.content);
-              setCurrentTurnSources(parsedData.content || []);
+              // console.log("SSE onmessage: Handling sources:", parsedData.content); // Debugging
+              finalSources = parsedData.content || []; // Replace/set sources
+              setCurrentTurnSources(finalSources); // Update UI
+            } else if (parsedData.type === 'processed_files') {
+              setProcessedFiles(parsedData.content || []); // Update processed files display
+            } else if (parsedData.type === 'error') {
+              console.error("SSE Error Event:", parsedData.content);
+              toast.error(`Error from RAG: ${parsedData.content}`);
+              // Decide how to handle backend errors - stop stream? show message?
+              throw new Error(`RAG API Error: ${parsedData.content}`); // Throw to trigger catch block
             } else if (parsedData.type === 'end') {
               console.log("SSE onmessage: Handling end event. Final assistant response:", assistantResponse);
-              // --- Add final message ONLY on 'end' event --- 
-              if (assistantResponse) {
-                setChatHistory(prev => {
-                  if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantResponse) {
-                    return prev; // Avoid duplicates if end fires multiple times somehow
-                  }
-                  return [...prev, { role: "assistant", content: assistantResponse }];
-                });
-              }
-              // --- Stop loading ONLY on 'end' event ---
-              setLoading(false);
-            } else if (parsedData.type === 'error') {
-              console.error("SSE onmessage: Handling error event:", parsedData.content);
-              setCurrentTurnResult(prev => prev + `\n\nERROR: ${parsedData.content}`);
-              setChatHistory(prev => [...prev, { role: "assistant", content: `Error: ${parsedData.content}` }]);
-              setLoading(false);
+              // Stream finished message is handled in onclose/onerror
+            } else {
+              // console.log("SSE onmessage: Received unhandled event type:", parsedData.type);
             }
-          } catch (e) {
-            console.error("SSE onmessage: Failed to parse JSON or process message:", event.data, e);
-            setCurrentTurnResult((prev) => prev + "\n\nError: Received unparseable message from backend.\n");
-            setChatHistory(prev => [...prev, { role: "assistant", content: `Error: Unparseable message - ${event.data}` }]);
-            setLoading(false);
+          } catch (parseError) {
+            console.error("SSE onmessage: Failed to parse JSON data:", parseError, "Raw data:", event.data);
+            // Handle non-JSON messages if necessary
           }
         },
 
         onclose() {
           console.log("SSE Connection closed by server.");
-          // --- REMOVE history update and loading state change from here --- 
-          // // Only set loading to false if we haven't received a complete response yet
-          // if (!assistantResponse) {
-          //   setLoading(false);
-          // } else {
-          //   setLoading(false);
-          //   // If the connection closed but we have a partial response, make sure it's added to history
-          //   if (assistantResponse && !chatHistory.some(msg => msg.role === "assistant" && msg.content === assistantResponse)) {
-          //     setChatHistory(prev => [...prev, { role: "assistant", content: assistantResponse }]);
-          //   }
-          // }
-          // --- Loading state should be reliably set to false when the 'end' or 'error' event is received --- 
+          setLoading(false);
+          // Add the final assistant response to the history state *after* streaming is complete
+          setChatHistory(prev => [...prev, { role: "assistant", content: assistantResponse }]);
+          // Save the user message and the complete assistant response to the backend
+          saveMessagesToBackend(currentSessionId, userMessage, assistantResponse);
         },
 
         onerror(err) {
-          console.error("SSE Connection error:", err);
-          setCurrentTurnResult((prev) => prev + "\n\nError: Connection to backend failed or was lost.");
+          console.error("SSE Connection Error:", err);
           setLoading(false);
-          setChatHistory(prev => [...prev, { role: "assistant", content: "Error: Connection failed." }]);
-        },
+          toast.error("Connection error with chat service.");
+          // Decide if partial response should be saved or added to history
+          // Maybe add an error message to the chat history?
+          // setChatHistory(prev => [...prev, { role: "assistant", content: "Error receiving response." }]);
+          throw err; // Re-throw to be caught by the outer try/catch block
+        }
       });
-
     } catch (error) {
-      console.error("Failed to initiate SSE connection:", error);
-      setCurrentTurnResult("Error: Could not connect to the backend streaming service.");
+      console.error("Error during onSent:", error);
       setLoading(false);
-      setChatHistory(prev => [...prev, { role: "assistant", content: "Error: Connection failed." }]);
-    }
-
-  }, [input, currentSessionId, chatHistory]); // Add dependencies
-  // --- End Refactored onSent --- 
-
-  // --- NEW: Upload/Process Functions ---
-  const handleFileChange = (event) => {
-    const files = Array.from(event.target.files);
-    console.log("Files selected:", files);
-    setSelectedFiles(files);
-    // Automatically trigger upload after files are selected
-    if (files.length > 0) {
-      // --- Pass currentSessionId to uploadFiles --- 
-      if (!currentSessionId) {
-        toast.error("Cannot upload files: No active chat session.");
-        return;
+      // Display error in chat or using toast
+      if (!toast.isActive('onSentError')) { // Prevent duplicate toasts
+        toast.error("Failed to get response from chat service.", { toastId: 'onSentError' });
       }
-      uploadFiles(files, currentSessionId);
-      // -----------------------------------------
+      // Optionally add error message to chat history state
+      // setChatHistory(prev => [...prev, { role: "assistant", content:"Sorry, I couldn't get a response."}]);
     }
-  };
+  }, [input, currentSessionId, chatHistory, chatSessions]); // Dependencies updated
 
-  const uploadFiles = async (filesToUpload, sessionId) => {
-    if (!filesToUpload || filesToUpload.length === 0) {
-      toast.warn("No files selected for upload.");
-      return;
-    }
-    if (!sessionId) {
-      toast.error("Cannot upload files: No active session ID.");
-      return;
-    }
-
-    setIsUploading(true);
-    setLastUploadResult(null);
-    toast.info(`Uploading ${filesToUpload.length} file(s) for session ${sessionId}...`);
-
-    const formData = new FormData();
-    // --- Append session_id to form data --- 
-    formData.append("session_id", sessionId);
-    // -------------------------------------
-    filesToUpload.forEach((file) => {
-      formData.append("files", file);
-    });
-
-    try {
-      console.log(`Sending files to ${RAG_BACKEND_URL}/api/upload for session ${sessionId}`);
-      const response = await axios.post(`${RAG_BACKEND_URL}/api/upload`, formData, {
-        headers: {
-          // Content-Type is set automatically by browser for FormData
-          // 'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000,
-      });
-      console.log("Upload response:", response.data);
-      setLastUploadResult({ success: true, data: response.data });
-      toast.success(`Successfully uploaded ${response.data.filenames_saved?.length || 0} file(s). Ready to process.`);
-      // Clear selected files after successful upload
-      setSelectedFiles([]);
-    } catch (error) {
-      console.error("Error uploading files:", error);
-      const errorMsg = error.response?.data?.detail || error.message || "Unknown upload error";
-      setLastUploadResult({ success: false, error: errorMsg });
-      toast.error(`Upload failed: ${errorMsg}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const processUploadedFiles = async () => {
-    if (!currentSessionId) {
-      toast.error("Cannot process documents: No active chat session.");
-      return;
-    }
-    // Optionally check if lastUploadResult was successful?
-    // if (!lastUploadResult?.success) {
-    //    toast.warn("Please upload files successfully before processing.");
-    //    return;
-    // }
-
-    setIsProcessing(true);
-    setLastProcessResult(null); // Clear previous result
-    toast.info(`Processing documents for session ${currentSessionId}...`);
-
-    try {
-      console.log(`Processing documents for session ${currentSessionId}`);
-      console.log(`Sending request to ${RAG_BACKEND_URL}/api/process`);
-
-      const response = await axios.post(`${RAG_BACKEND_URL}/api/process`, {
-        session_id: currentSessionId // Send current session ID
-      }, {
-        timeout: 60000, // 60 second timeout for processing
-      });
-
-      console.log("Processing response:", response.data);
-      setLastProcessResult({ success: true, data: response.data });
-      toast.success(response.data.message || "Processing finished.");
-      // --- Clear upload result after successful processing --- 
-      setLastUploadResult(null);
-      // ---------------------------------------------------
-    } catch (error) {
-      console.error("Error processing documents:", error);
-      const errorMsg = error.response?.data?.detail || error.message || "Unknown processing error";
-      setLastProcessResult({ success: false, error: errorMsg });
-      toast.error(`Processing failed: ${errorMsg}`);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // --- NEW: Auth Functions ---
+  // --- Authentication Functions ---
   const login = async (email, password) => {
-    // TODO: Replace with actual API call to Node.js backend
-    console.log("Attempting login for:", email);
+    console.log("Attempting login...");
     try {
-      // const response = await axios.post(`${NODE_BACKEND_URL}/api/auth/login`, { email, password });
-      // const { token, userData } = response.data;
-
-      // --- Placeholder Success Logic ---
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-      const token = "fake-jwt-token-" + Date.now(); // Simulate a token
-      const userData = { email: email, name: "Test User" }; // Simulate user data
-      // -------------------------------
+      const response = await nodeApi.post('/api/auth/login', { email, password });
+      const { token, user: userData } = response.data;
 
       localStorage.setItem('authToken', token);
       setAuthToken(token);
       setUser(userData);
-      setIsAuthenticated(true);
+      setIsAuthenticated(true); // <<< State update
       toast.success("Login successful!");
-      navigate('/app'); // <<< Navigate to app on successful login
+      navigate('/app'); // <<< Navigation
 
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error("Login failed:", error.response?.data?.message || error.message);
       const errorMsg = error.response?.data?.message || "Login failed. Please check credentials.";
       toast.error(errorMsg);
-      setIsAuthenticated(false); // Ensure state is false on failure
+      setIsAuthenticated(false);
+      setAuthToken(null);
+      setUser(null);
     }
   };
 
   const register = async (name, email, password) => {
-    // TODO: Replace with actual API call to Node.js backend
-    console.log("Attempting registration for:", name, email);
+    console.log("Attempting registration...");
     try {
-      // const response = await axios.post(`${NODE_BACKEND_URL}/api/auth/register`, { name, email, password });
-      // const { message } = response.data; // Or maybe token if auto-login
-
-      // --- Placeholder Success Logic --- 
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-      // Assume registration automatically logs in
-      const token = "fake-jwt-token-" + Date.now();
-      const userData = { email: email, name: name };
-      // ---------------------------------
+      // We assume the backend register endpoint returns the same { token, user } structure as login upon success
+      const response = await nodeApi.post('/api/auth/register', { name, email, password });
+      const { token, user: userData } = response.data; // Expect token and user data
 
       toast.success("Registration successful! Logging in...");
-      // Automatically log in after registration
       localStorage.setItem('authToken', token);
       setAuthToken(token);
       setUser(userData);
-      setIsAuthenticated(true);
-      navigate('/app'); // <<< Navigate to app on successful registration/login
+      setIsAuthenticated(true); // <<< State update
+      navigate('/app'); // <<< Navigation
 
     } catch (error) {
-      console.error("Registration failed:", error);
+      console.error("Registration failed:", error.response?.data?.message || error.message);
       const errorMsg = error.response?.data?.message || "Registration failed. Please try again.";
       toast.error(errorMsg);
       setIsAuthenticated(false);
+      setAuthToken(null);
+      setUser(null);
     }
   };
 
@@ -484,50 +497,179 @@ const ContextProvider = (props) => {
     setAuthToken(null);
     setUser(null);
     setIsAuthenticated(false);
-    setCurrentSessionId(null); // Reset session state on logout
+    setCurrentSessionId(null);
     setChatSessions([]);
     setChatHistory([]);
-    navigate('/login'); // Navigate to login on logout
+    navigate('/login');
   };
-  // ------------------------
 
+  // --- Upload/Process Functions (Mostly unchanged, ensure session ID is used if needed) ---
+  const handleFileChange = (event) => {
+    const files = Array.from(event.target.files);
+    // Simple validation (example: allow only PDF and DOCX)
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const validFiles = files.filter(file => allowedTypes.includes(file.type));
+    const invalidFiles = files.filter(file => !allowedTypes.includes(file.type));
+
+    if (invalidFiles.length > 0) {
+      toast.warn(`Unsupported file types: ${invalidFiles.map(f => f.name).join(', ')}. Only PDF and DOCX allowed.`);
+    }
+    setSelectedFiles(validFiles); // Only store valid files
+    if (validFiles.length > 0) {
+      toast.info(`${validFiles.length} valid file(s) selected.`);
+    }
+    // Clear the input value so the same file can be selected again
+    event.target.value = null;
+  };
+
+  const uploadFiles = async (filesToUpload) => {
+    if (!filesToUpload || filesToUpload.length === 0) {
+      toast.warn("No valid files selected for upload.");
+      return;
+    }
+    if (!currentSessionId) {
+      toast.error("No active chat session. Cannot upload files.");
+      return;
+    }
+
+    const formData = new FormData();
+    filesToUpload.forEach(file => {
+      formData.append('files', file);
+    });
+    // Append session_id to the form data
+    formData.append('session_id', currentSessionId);
+
+    setIsUploading(true);
+    setLastUploadResult(null); // Clear previous result
+    console.log(`Uploading ${filesToUpload.length} files for session ${currentSessionId}...`);
+    toast.info(`Uploading ${filesToUpload.length} file(s)...`);
+
+    try {
+      const response = await axios.post(`${RAG_BACKEND_URL}/api/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          // Add Auth headers if RAG API requires them
+        },
+      });
+      console.log("Upload response:", response.data);
+      setLastUploadResult(response.data); // Store result object
+      toast.success(response.data.message || `${filesToUpload.length} file(s) uploaded successfully!`);
+      setSelectedFiles([]); // Clear selected files after successful upload
+    } catch (error) {
+      console.error("File upload failed:", error.response?.data || error.message);
+      const errorMsg = error.response?.data?.detail || "File upload failed.";
+      setLastUploadResult({ error: errorMsg }); // Store error result
+      toast.error(errorMsg);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const processUploadedFiles = async () => {
+    if (!currentSessionId) {
+      toast.error("No active chat session. Cannot process files.");
+      return;
+    }
+    setIsProcessing(true);
+    setLastProcessResult(null); // Clear previous result
+    setProcessedFiles([]); // Clear displayed list while processing
+    console.log(`Triggering processing for session ${currentSessionId}...`);
+    toast.info("Processing uploaded documents...");
+
+    try {
+      // Send session_id in the request body
+      const response = await axios.post(`${RAG_BACKEND_URL}/api/process`, {
+        session_id: currentSessionId
+      }, {
+        // Add Auth headers if RAG API requires them
+      });
+      console.log("Processing response:", response.data);
+      setLastProcessResult(response.data); // Store result object
+      setProcessedFiles(response.data.processed_files || []); // Update list of processed files for display
+      toast.success(response.data.message || "Documents processed successfully!");
+
+    } catch (error) {
+      console.error("Document processing failed:", error.response?.data || error.message);
+      const errorMsg = error.response?.data?.detail || "Document processing failed.";
+      setLastProcessResult({ error: errorMsg }); // Store error result
+      toast.error(errorMsg);
+      // Optionally display the error in the UI, e.g., setProcessedFiles([{ name: 'Error', error: errorMsg }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // --- Theme Toggle ---
   const toggleTheme = () => {
     setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
   };
 
-  // --- Context Value --- 
+  // --- Effects ---
+  useEffect(() => {
+    // Theme management
+    document.body.classList.remove('light', 'dark');
+    document.body.classList.add(theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    // Fetch initial data on mount if authenticated
+    if (isAuthenticated) {
+      console.log("Authenticated on mount/change, fetching sessions...");
+      fetchUserChatSessions();
+    } else {
+      console.log("Not authenticated on mount/change.");
+      // Clear session data if not authenticated
+      setChatSessions([]);
+      setCurrentSessionId(null);
+      setChatHistory([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]); // Run when auth state changes
+
+
+  // --- Context Value ---
   const contextValue = {
-    // Existing States & Setters
-    input,
-    setInput,
-    chatHistory,
-    setChatHistory,
-    loading,
-    currentTurnResult,
-    currentTurnSources,
-    showResult,
-    currentSessionId,
+    // State
+    input, setInput,
+    showResult, setShowResult,
+    loading, setLoading, // RAG loading
+    currentSessionId, // Read-only needed by Sidebar
+    chatSessions, // Read-only needed by Sidebar
+    chatHistory, // Read-only needed by Main
+    currentTurnResult, // For displaying streamed response
+    currentTurnSources, // For displaying sources
+    theme, // Read-only needed by components
+    isAuthenticated, // Read-only
+    user, // Read-only
+    processedFiles, // Read-only needed by Main/Sidebar
+    lastUploadResult,
+    lastProcessResult,
     isUploading,
     isProcessing,
-    lastUploadResult,
-    isAuthenticated,
-    authToken,
-    user, // Added user state
+    selectedFiles,
 
-    // Existing Functions
+    // Core Functions
     onSent,
     startNewChat,
-    handleFileChange,
-    processUploadedFiles,
     selectChat,
+
+    // Auth Functions
     login,
     register,
     logout,
 
-    // --- Ensure Theme is included --- 
-    theme,
-    toggleTheme
-    // ------------------------------
+    // Upload/Process Functions
+    handleFileChange,
+    uploadFiles,
+    processUploadedFiles,
+
+    // Theme Function
+    toggleTheme,
+
+    // RAG Backend URL (if needed directly by components)
+    // RAG_BACKEND_URL
+    isAuthLoading, // <<< Pass the new loading state
   };
 
   return (
