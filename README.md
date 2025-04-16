@@ -172,42 +172,42 @@ Access the application through the URL provided by the React development server 
 * [x] ~~Fix `NameError: 'store' is not defined` for chat history (temporary in-memory store).~~
 * [x] ~~Update `ChatMessageHistory` import path.~~
 * [x] ~~Restore source document retrieval in API streaming response.~~
-* [ ] **Investigate and resolve Weaviate `nearText` retrieval relevance issue.**
-* [ ] Refine prompt engineering (`SYSTEM_PROMPT`, context formatting).
-* [ ] Add error handling for Weaviate connection/query failures.
-* [ ] Create `backend/requirements.txt`.
+* [x] ~~Investigate and resolve Weaviate `nearText` retrieval relevance issue.~~
+* [x] ~~Refine prompt engineering (`SYSTEM_PROMPT`, context formatting).~~
+* [x] ~~Add error handling for Weaviate connection/query failures.~~
+* [x] ~~Create `backend/requirements.txt`.~~
 
 ### User/History Backend (Node.js - `frontend/Rag_App/server/`)
 
-* [ ] Implement user registration/login endpoints.
-* [ ] Implement authentication (e.g., JWT).
+* [x] ~~Implement user registration/login endpoints.~~
+* [x] Implement authentication (e.g., JWT).
 * [ ] Implement endpoints to save/retrieve chat history per user.
 * [ ] Define database schema for users and chat history.
-* [ ] Add error handling and validation.
-* [ ] Create `package.json` (if not present) and list dependencies.
+* [x] ~~Add error handling and validation.~~
+* [x] ~~Create `package.json` (if not present) and list dependencies.~~
 
 ### Frontend (React - `frontend/Rag_App/client/`)
 
-* [ ] Setup project structure (components, services, state management).
-* [ ] Implement user login/registration UI components.
-* [ ] Implement file uploader component.
-* [ ] Connect file uploader to Python backend (`/api/upload`, `/api/process`).
-* [ ] Display document processing status.
-* [ ] Implement chat interface component.
-* [ ] Connect chat interface to Python backend (`/api/chat`) for RAG Q&A.
-* [ ] Handle streaming responses from Python backend.
-* [ ] Display retrieved source documents.
-* [ ] Connect chat interface to Node.js backend for saving/loading history.
-* [ ] Implement state management (e.g., Context API, Redux, Zustand).
-* [ ] Implement routing (e.g., React Router).
-* [ ] Style UI components (e.g., CSS Modules, Tailwind CSS, MUI).
-* [ ] Create `package.json` (if not present) and list dependencies.
+* [x] ~~Setup project structure (components, services, state management).~~
+* [x] ~~Implement user login/registration UI components.~~
+* [x] ~~Implement file uploader component.~~
+* [x] ~~Connect file uploader to Python backend (`/api/upload`, `/api/process`).~~
+* [x] ~~Display document processing status.~~
+* [x] ~~Implement chat interface component.~~
+* [x] ~~Connect chat interface to Python backend (`/api/chat`) for RAG Q&A.~~
+* [x] ~~Handle streaming responses from Python backend.~~
+* [x] ~~Display retrieved source documents.~~
+* [x] ~~Connect chat interface to Node.js backend for saving/loading history.~~
+* [x] ~~Implement state management (e.g., Context API, Redux, Zustand).~~
+* [x] ~~Implement routing (e.g., React Router).~~
+* [x] ~~Style UI components (e.g., CSS Modules, Tailwind CSS, MUI).~~
+* [x] ~~Create `package.json` (if not present) and list dependencies.~~
 
 ### General
 
-* [ ] Create root-level `requirements.txt` (if needed for shared tools).
-* [ ] Add comprehensive unit and integration tests for all components.
-* [ ] Implement consistent logging across all services.
-* [ ] Finalize documentation.
+* [x] ~~Create root-level `requirements.txt` (if needed for shared tools).~~
+* [ ] Add comprehensive unit and integration tests for all components.~~
+* [x] ~~Implement consistent logging across all services.~~
+* [x] ~~Finalize documentation.~~
 * [ ] Containerize the application (Docker/Docker Compose).
 * [ ] Define deployment strategy.
