@@ -152,7 +152,7 @@ def retrieve_context_weaviate(query: str, client: weaviate.Client, session_id: s
         traceback.print_exc()
         return []
 
-# --- Chain Creation (Revised) ---
+# --- Chain Creation (REVISED) ---
 def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnable:
     """
     Creates the main RAG chain with explicit history lookup and session-specific retrieval.
@@ -163,8 +163,10 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
         client: The Weaviate client for remote vector store (used for Weaviate mode)
         retriever: An already initialized retriever (used for local FAISS mode)
     """
-    print("--- Creating RAG chain (Manual History Version) ---")
+    print("--- Creating RAG chain (Revised Structure) ---")
 
+    # --- Define Components ---
+    # Prompt remains the same
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),
@@ -173,51 +175,85 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
         ]
     )
 
+    # LLM part of the chain
+    llm_chain = prompt | llm | StrOutputParser()
+
+    # --- Define Retrieval/Formatting Functions ---
     # Function to retrieve context based on mode (local or remote)
-    def get_context(inputs):
+    def get_context(inputs: dict) -> List[Document]: # Added type hint
         question = inputs["question"]
-        session_id = inputs["session_id"]
-        
+        session_id = inputs["session_id"] # Expects session_id here
+        print(f"DEBUG get_context called for session: {session_id}")
         if retriever:
-            # Local mode with FAISS retriever
             print(f"Using local retriever for session '{session_id}'")
-            docs = retriever.get_relevant_documents(question)
-            return docs
+            try:
+                docs = retriever.get_relevant_documents(question)
+                print(f"Local retriever returned {len(docs)} docs.")
+                return docs
+            except Exception as e:
+                 print(f"ERROR in local retriever: {e}")
+                 traceback.print_exc()
+                 return []
         elif client:
-            # Remote mode with Weaviate
             print(f"Using Weaviate retrieval for session '{session_id}'")
+            # retrieve_context_weaviate already has error handling
             docs = retrieve_context_weaviate(question, client, session_id)
+            print(f"Weaviate retriever returned {len(docs)} docs.")
             return docs
         else:
             print(f"WARNING: No retriever or client available for session '{session_id}'")
             return []
 
-    # Define the core RAG chain
+    # Function to get history messages
+    def get_history_messages(inputs: dict): # Added type hint
+        session_id = inputs["session_id"] # Expects session_id here
+        print(f"DEBUG get_history_messages called for session: {session_id}")
+        history_obj = get_session_history(session_id)
+        return history_obj.messages
+
+    # --- Define Parallel Steps --- 
+    # Step 1: Prepare initial context dict with question and session_id
+    prepare_initial_context = RunnableParallel(
+        question=itemgetter("question"),
+        session_id=RunnableLambda(lambda x, config: config["configurable"]["session_id"], name="GetSessionIdFromConfig")
+    ).with_config({"run_name": "PrepareInitialContext"})
+
+    # Step 2: Fetch docs and history in parallel, **pass question through**
+    fetch_docs_and_history = RunnableParallel(
+        # Pass question directly through from Step 1's output
+        question=itemgetter("question"),
+        # Run get_context using the dict from Step 1
+        retrieved_docs=RunnableLambda(get_context, name="GetRelevantDocs"),
+        # Run get_history_messages using the dict from Step 1
+        chat_history=RunnableLambda(get_history_messages, name="FetchHistoryMessages")
+    ).with_config({"run_name": "FetchDocsAndHistory"})
+
+    # Step 3: Format docs and prepare LLM input
+    format_and_generate = RunnableParallel(
+         answer = (
+             RunnablePassthrough.assign( # Input: {'question':..., 'retrieved_docs':..., 'chat_history':...} from Step 2
+                context = itemgetter("retrieved_docs") | RunnableLambda(format_docs, name="FormatDocs")
+                # Output: {'question':..., 'retrieved_docs':..., 'chat_history':..., 'context':...}
+             )
+             # llm_chain now receives all required keys: 'question', 'chat_history', 'context'
+             | llm_chain
+         ),
+         # Pass original docs through
+         source_documents = itemgetter("retrieved_docs")
+    ).with_config({"run_name": "FormatAndGenerate"})
+
+    # --- Define the Main RAG Chain --- 
     rag_chain = (
-        # Step 1: Fetch history and assign to chat_history
-        RunnablePassthrough.assign(
-            chat_history=(
-                itemgetter("session_id") 
-                | RunnableLambda(get_session_history, name="FetchHistoryObject") 
-                | RunnableLambda(lambda history_obj: history_obj.messages, name="ExtractMessages")
-            )
-        )
-        # Step 2: Retrieve docs and format them (fixed to avoid duplicate calls)
-        | RunnablePassthrough.assign(
-            retrieved_docs=RunnableLambda(get_context, name="GetRelevantDocs"),
-        )
-        | RunnablePassthrough.assign(
-            context=lambda x: format_docs(x["retrieved_docs"]),
-        )
-        # Step 3: Run LLM and keep sources
-        | RunnableParallel(
-            {
-                "answer": prompt | llm | StrOutputParser(),
-                "source_documents": itemgetter("retrieved_docs") 
-            }
-        )
+        # Step 1: Prepare initial context dict with question and session_id
+        prepare_initial_context
+
+        # Step 2: Fetch docs and history in parallel, **pass question through**
+        | fetch_docs_and_history
+
+        # Step 3: Format docs and prepare LLM input
+        | format_and_generate
     )
 
-    print("RAG chain (Manual History Version) created successfully.")
+    print("RAG chain (Revised Structure) created successfully.")
     return rag_chain
 

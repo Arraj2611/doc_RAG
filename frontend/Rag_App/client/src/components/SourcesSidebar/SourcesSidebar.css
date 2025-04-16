@@ -1,0 +1,189 @@
+/* Styles for the Sources Sidebar */
+.sources-sidebar {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 350px;
+    /* Adjust width as needed */
+    max-width: 90%;
+    /* Ensure it doesn't take full screen on small devices */
+    height: 100%;
+    background-color: #ffffff;
+    /* Light theme default */
+    box-shadow: -3px 0 8px rgba(0, 0, 0, 0.15);
+    /* Softer shadow */
+    padding: 20px;
+    padding-top: 60px;
+    /* Space for close button */
+    overflow-y: auto;
+    z-index: 1050;
+    /* Ensure it's above most other elements */
+    transition: transform 0.3s ease-in-out;
+    transform: translateX(100%);
+    /* Start hidden */
+    color: #333;
+    /* Default text color */
+}
+
+.sources-sidebar.open {
+    transform: translateX(0);
+    /* Slide in when open */
+}
+
+.close-sidebar-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    /* Make icon slightly larger */
+    color: #5f6368;
+    /* Match typical Google UI icon color */
+    cursor: pointer;
+    padding: 5px;
+    line-height: 1;
+    /* Prevent extra space */
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.close-sidebar-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    /* Subtle hover effect */
+}
+
+.sources-sidebar h3 {
+    margin-top: 0;
+    margin-bottom: 25px;
+    color: #202124;
+    /* Darker heading color */
+    font-size: 1.2em;
+    font-weight: 500;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 10px;
+}
+
+.sidebar-source-item {
+    margin-bottom: 15px;
+    padding: 12px 15px;
+    background-color: #f8f9fa;
+    /* Light background for items */
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    transition: box-shadow 0.2s;
+}
+
+.sidebar-source-item:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    /* Add slight shadow on hover */
+}
+
+.sidebar-source-item h4 {
+    margin-top: 0;
+    margin-bottom: 5px;
+    font-size: 1em;
+    font-weight: 500;
+    /* Slightly bolder title */
+    color: #1a73e8;
+    /* Google blue for source name */
+    word-wrap: break-word;
+}
+
+.sidebar-source-meta {
+    font-size: 0.8em;
+    color: #5f6368;
+    /* Grey for metadata */
+    margin-bottom: 10px;
+}
+
+.sidebar-source-meta span {
+    margin-right: 12px;
+    /* More spacing */
+    display: inline-block;
+    /* Ensure spacing works */
+}
+
+/* Style for the content snippet */
+.sidebar-source-content {
+    margin-top: 8px;
+    padding: 10px;
+    /* Add padding */
+    background-color: #fff;
+    /* White background for contrast */
+    border: 1px solid #e8eaed;
+    border-radius: 4px;
+    max-height: 250px;
+    /* Limit height */
+    overflow-y: auto;
+    /* Allow scrolling for long snippets */
+}
+
+/* Use pre for better code/text formatting */
+.sidebar-source-content pre {
+    white-space: pre-wrap;
+    /* Wrap long lines */
+    word-wrap: break-word;
+    font-size: 0.85em;
+    /* Slightly smaller font for content */
+    color: #3c4043;
+    /* Standard text color */
+    margin: 0;
+    /* Remove default pre margins */
+    font-family: inherit;
+    /* Use default font */
+}
+
+/* Dark Theme Overrides */
+body.dark .sources-sidebar {
+    background-color: #282a2c;
+    color: #e8eaed;
+    border-left: 1px solid #444746;
+    /* Dark border */
+    box-shadow: -3px 0 8px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .close-sidebar-btn {
+    color: #bdc1c6;
+    /* Lighter grey for dark mode */
+}
+
+body.dark .close-sidebar-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark .sources-sidebar h3 {
+    color: #e8eaed;
+    border-bottom-color: #444746;
+}
+
+body.dark .sidebar-source-item {
+    background-color: #303134;
+    border-color: #444746;
+}
+
+body.dark .sidebar-source-item:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+
+body.dark .sidebar-source-item h4 {
+    color: #8ab4f8;
+    /* Lighter blue */
+}
+
+body.dark .sidebar-source-meta {
+    color: #bdc1c6;
+    /* Lighter grey */
+}
+
+body.dark .sidebar-source-content {
+    background-color: #202124;
+    /* Darker background */
+    border-color: #444746;
+}
+
+body.dark .sidebar-source-content pre {
+    color: #e8eaed;
+    /* Light text */
+}

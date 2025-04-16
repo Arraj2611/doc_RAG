@@ -5,7 +5,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseLanguageModel
 from langchain_groq import ChatGroq
 import os
-from ragbase.config import Config
+from .config import Config
 # from sentence_transformers import SentenceTransformer
 # from typing import List
 # from PIL import Image
@@ -30,38 +30,103 @@ from ragbase.config import Config
 
 # Add back create_embeddings function
 def create_embeddings() -> Embeddings:
-    print(f"Creating OllamaEmbeddings with model '{Config.Model.OLLAMA_EMBEDDING_MODEL}'")
-    try:
-        embeddings = OllamaEmbeddings(
-            model=Config.Model.OLLAMA_EMBEDDING_MODEL,
-            base_url=Config.Model.OLLAMA_BASE_URL
+    """Creates the embedding model instance based on configuration."""
+    provider = Config.Embedding.PROVIDER.lower()
+    model_name = Config.Embedding.MODEL_NAME
+    print(f"Creating embeddings: Provider='{provider}', Model='{model_name}'")
+
+    if provider == "ollama":
+        return OllamaEmbeddings(model=model_name)
+    elif provider == "openai":
+        return OpenAIEmbeddings(model=model_name, api_key=Config.Auth.OPENAI_API_KEY)
+    elif provider == "azure_openai":
+        if not Config.Auth.AZURE_OPENAI_API_KEY or not Config.Auth.AZURE_OPENAI_ENDPOINT:
+            raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT")
+        return AzureOpenAIEmbeddings(
+            model=model_name,
+            azure_deployment=model_name, # Often deployment name matches model
+            api_key=Config.Auth.AZURE_OPENAI_API_KEY,
+            azure_endpoint=Config.Auth.AZURE_OPENAI_ENDPOINT,
+            api_version=Config.Auth.AZURE_OPENAI_API_VERSION # Add API version
         )
-        # Optional: Test connection?
-        # embeddings.embed_query("test") 
-        print("OllamaEmbeddings created successfully.")
-        return embeddings
-    except Exception as e:
-        print(f"ERROR: Failed to create OllamaEmbeddings. Ensure Ollama is running at {Config.Model.OLLAMA_BASE_URL} and the model '{Config.Model.OLLAMA_EMBEDDING_MODEL}' is pulled. Error: {e}")
-        raise
+    elif provider == "huggingface_inference":
+        if not Config.Auth.HUGGINGFACE_API_KEY:
+             raise ValueError("HuggingFace Inference API requires HUGGINGFACE_API_KEY")
+        return HuggingFaceInferenceAPIEmbeddings(
+            api_key=Config.Auth.HUGGINGFACE_API_KEY, model_name=model_name
+        )
+    elif provider == "huggingface_local":
+         # For local HF models, uses sentence-transformers library
+        # Ensure device is set correctly (cpu, cuda, mps)
+        model_kwargs = {'device': Config.Embedding.DEVICE}
+        encode_kwargs = {'normalize_embeddings': False}
+        print(f"  Local HF args: model_kwargs={model_kwargs}, encode_kwargs={encode_kwargs}")
+        return HuggingFaceEmbeddings(
+            model_name=model_name,
+            model_kwargs=model_kwargs,
+            encode_kwargs=encode_kwargs
+        )
+    # Add other providers like Cohere, Bedrock etc. here
+    # elif provider == "cohere":
+    #     return CohereEmbeddings(model=model_name, cohere_api_key=Config.Auth.COHERE_API_KEY)
+    else:
+        raise ValueError(f"Unsupported embedding provider: {provider}")
 
 def create_llm() -> BaseLanguageModel:
-    # Always use Groq
-    print("Creating Groq LLM...")
-    try:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY environment variable not set")
-            
-        llm = ChatGroq(
-            api_key=api_key,
-            temperature=Config.Model.TEMPERATURE,
-            model_name="llama3-8b-8192",  # Hardcoded to a reliable model
-            max_tokens=Config.Model.MAX_TOKENS,
+    """Creates the LLM instance based on configuration."""
+    provider = Config.LLM.PROVIDER.lower()
+    model_name = Config.LLM.MODEL_NAME
+    temperature = Config.LLM.TEMPERATURE
+    print(f"Creating LLM: Provider='{provider}', Model='{model_name}', Temp={temperature}")
+
+    if provider == "ollama":
+        return Ollama(
+            model=model_name,
+            temperature=temperature,
+            # Add other Ollama parameters if needed
+            base_url=Config.LLM.OLLAMA_BASE_URL 
+        )
+    elif provider == "openai":
+        return ChatOpenAI(
+            model=model_name,
+            temperature=temperature,
+            api_key=Config.Auth.OPENAI_API_KEY,
+            # model_kwargs={"response_format": {"type": "json_object"}}, # If JSON mode needed
+            streaming=True # Enable streaming by default for chat models
+        )
+    elif provider == "azure_openai":
+        if not Config.Auth.AZURE_OPENAI_API_KEY or not Config.Auth.AZURE_OPENAI_ENDPOINT:
+            raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT")
+        return AzureChatOpenAI(
+            model=model_name,
+            azure_deployment=model_name, # Often deployment name matches model
+            temperature=temperature,
+            api_key=Config.Auth.AZURE_OPENAI_API_KEY,
+            azure_endpoint=Config.Auth.AZURE_OPENAI_ENDPOINT,
+            api_version=Config.Auth.AZURE_OPENAI_API_VERSION,
             streaming=True
         )
-        print(f"Groq LLM created successfully (Model: llama3-8b-8192)")
-        return llm
-    except Exception as e:
-        print(f"ERROR: Failed to create Groq LLM: {e}")
-        raise
+    elif provider == "groq":
+        groq_api_key = Config.Auth.GROQ_API_KEY
+        if not groq_api_key:
+            raise ValueError("Groq provider requires GROQ_API_KEY in environment variables (.env)")
+        try:
+            llm = ChatGroq(
+                api_key=groq_api_key,
+                temperature=temperature,
+                model_name=model_name,  
+                # max_tokens=Config.LLM.MAX_TOKENS, # Usually handled by model defaults or prompt
+                streaming=True
+            )
+            print(f"Groq LLM created successfully (Model: {model_name})")
+            return llm
+        except Exception as e:
+            print(f"ERROR: Failed to create Groq LLM: {e}")
+            raise # Re-raise the exception
+    # Add other providers like Anthropic, Gemini, etc. here
+    # elif provider == "anthropic":
+    #     from langchain_anthropic import ChatAnthropic
+    #     return ChatAnthropic(model=model_name, temperature=temperature, api_key=Config.Auth.ANTHROPIC_API_KEY)
+    else:
+        raise ValueError(f"Unsupported LLM provider: {provider}")
 

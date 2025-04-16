@@ -1,14 +1,16 @@
 .sidebar {
-  min-height: 100vh;
-  display: inline-flex;
+  height: 100vh;
+  display: flex;
   flex-direction: column;
   justify-content: space-between;
   background-color: #f0f4f9;
   padding: 25px 15px;
   transition: width 0.3s ease;
-  /* Add transition for smooth collapse/expand */
   width: 60px;
-  /* Default collapsed width */
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
 }
 
 .sidebar.extended {
@@ -100,9 +102,7 @@
   height: 40px;
   box-sizing: border-box;
   width: 100%;
-  /* Ensure item takes full available width */
-  overflow: hidden;
-  /* Hide overflow for text collapsing */
+  position: relative;
 }
 
 .sidebar .recent-entry p,
@@ -113,13 +113,169 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex-grow: 1;
-  /* --- Collapse text visually and in layout --- */
   opacity: 0;
   max-width: 0;
   transition: opacity 0.2s ease, max-width 0.2s ease 0.1s;
-  /* Transition both */
-  /* -------------------------------------------- */
 }
+
+/* --- Styles for Chat Options Icon and Delete Menu --- */
+.sidebar .recent-entry .chat-options {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar .recent-entry .more-icon {
+  padding: 4px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.sidebar .recent-entry .more-icon:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+body.dark .sidebar .recent-entry .more-icon:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar .recent-entry .delete-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 5px;
+  background-color: #f0f4f9;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  z-index: 1010;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.dark .sidebar .recent-entry .delete-menu {
+  background-color: #282a2c;
+  border-color: #444746;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.sidebar .recent-entry .delete-menu button {
+  background: none;
+  border: none;
+  padding: 8px 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: #dc3545;
+  font-size: 14px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar .recent-entry .delete-menu button:hover {
+  background-color: #e8eaed;
+}
+
+body.dark .sidebar .recent-entry .delete-menu button {
+  color: #ff7a7a;
+}
+
+body.dark .sidebar .recent-entry .delete-menu button:hover {
+  background-color: #3c4043;
+}
+
+/* --- Styles for Rename Input and Buttons --- */
+.sidebar .recent-entry .rename-container {
+  flex-grow: 1;
+  /* Allow container to take available space */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  /* Add some space from the chat icon */
+  margin-right: 5px;
+  /* Add space before chat options icon would appear */
+}
+
+.sidebar .recent-entry .rename-input {
+  flex-grow: 1;
+  /* Allow input to take most space */
+  border: 1px solid transparent;
+  /* Hide border initially */
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 14px;
+  background-color: transparent;
+  color: inherit;
+  /* Inherit text color */
+  outline: none;
+}
+
+.sidebar .recent-entry .rename-input:focus {
+  background-color: #fff;
+  /* White background on focus */
+  border-color: #8ab4f8;
+  /* Blue border like Google apps */
+  color: #202124;
+  /* Dark text for light background */
+}
+
+body.dark .sidebar .recent-entry .rename-input:focus {
+  background-color: #3c4043;
+  /* Darker background on focus */
+  border-color: #a1c2fa;
+  /* Lighter blue border for dark mode */
+  color: #e8eaed;
+  /* Light text */
+}
+
+.sidebar .recent-entry .rename-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  /* Inherit icon color */
+  transition: background-color 0.2s ease;
+}
+
+.sidebar .recent-entry .rename-button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+body.dark .sidebar .recent-entry .rename-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Style save/cancel specifically if needed (e.g., color) */
+.sidebar .recent-entry .rename-button.save:hover {
+  color: #1a73e8;
+  /* Blue */
+}
+
+body.dark .sidebar .recent-entry .rename-button.save:hover {
+  color: #a1c2fa;
+}
+
+.sidebar .recent-entry .rename-button.cancel:hover {
+  color: #d93025;
+  /* Red */
+}
+
+body.dark .sidebar .recent-entry .rename-button.cancel:hover {
+  color: #ff7a7a;
+}
+
+/* ------------------------------------------ */
 
 /* Show text when sidebar is extended */
 .sidebar.extended .recent-entry p,
@@ -127,7 +283,6 @@
 .sidebar.extended .bottom-item p {
   opacity: 1;
   max-width: 100%;
-  /* Allow text to take space */
 }
 
 /* --- Adjust collapsed item styling --- */
@@ -135,11 +290,8 @@
 .sidebar:not(.extended) .new-chat,
 .sidebar:not(.extended) .bottom-item {
   gap: 10px;
-  /* Maintain consistent gap */
   padding: 10px;
-  /* Use consistent padding */
   width: max-content;
-  /* Allow item to shrink to icon size + padding */
 }
 
 /* ----------------------------------- */
@@ -177,27 +329,20 @@
 .sidebar .new-chat p,
 .sidebar .recent .recent-title,
 .sidebar .recent .recent-entry p {
-  /* Add specific styling if needed, e.g., ensure text doesn't wrap awkwardly */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
-  /* Ensure it fits within the sidebar */
 }
 
 /* Upload/Process Section */
 .upload-process-section {
   padding: 10px 10px 15px 10px;
-  /* Add some padding */
   border-bottom: 1px solid #e0e0e0;
-  /* Separator line */
   margin-bottom: 10px;
-  /* Space below */
   display: flex;
   flex-direction: column;
-  /* Stack buttons vertically */
   gap: 10px;
-  /* Space between buttons */
 }
 
 .upload-process-section button {
@@ -223,7 +368,6 @@
   opacity: 0.6;
   cursor: not-allowed;
   background-color: #f8f9fa;
-  /* Keep background consistent when disabled */
   box-shadow: none;
 }
 
@@ -234,10 +378,14 @@
 
 .theme-toggle:hover svg {
   transform: rotate(15deg);
-  /* Apply hover effect to SVG */
 }
 
 .theme-toggle p {
-  /* Ensure text also transitions if needed */
   transition: color 0.3s ease;
+}
+
+/* Add styles for potential icons in buttons later */
+.sidebar .recent-entry .delete-menu button svg {
+  width: 18px;
+  height: 18px;
 }

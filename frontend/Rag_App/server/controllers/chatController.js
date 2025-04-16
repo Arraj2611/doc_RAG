@@ -107,4 +107,60 @@ export const addMessagesToHistory = async (req, res) => {
     console.error('Error adding messages to history:', error);
     res.status(500).json({ message: 'Server error adding messages' });
   }
+};
+
+// @desc    Delete a specific chat session
+// @route   DELETE /api/chats/:sessionId
+// @access  Private
+export const deleteChatSession = async (req, res) => {
+  try {
+    const deletedSession = await ChatSession.findOneAndDelete({
+      sessionId: req.params.sessionId,
+      userId: req.user._id, // Ensure the user owns this session
+    });
+
+    if (!deletedSession) {
+      // If no session was found matching both sessionId and userId
+      return res.status(404).json({ message: 'Chat session not found or user not authorized' });
+    }
+
+    res.status(200).json({ message: 'Chat session deleted successfully' });
+
+  } catch (error) {
+    console.error('Error deleting chat session:', error);
+    res.status(500).json({ message: 'Server error deleting chat session' });
+  }
+};
+
+// @desc    Update the title of a specific chat session
+// @route   PUT /api/chats/:sessionId/title
+// @access  Private
+export const updateChatTitle = async (req, res) => {
+  const { title } = req.body;
+
+  if (!title || typeof title !== 'string' || title.trim() === '') {
+    return res.status(400).json({ message: 'A valid title is required' });
+  }
+
+  try {
+    const updatedSession = await ChatSession.findOneAndUpdate(
+      { sessionId: req.params.sessionId, userId: req.user._id }, // Find condition
+      { $set: { title: title.trim(), updatedAt: Date.now() } }, // Update operation
+      { new: true, runValidators: true } // Options: return updated doc, run schema validators
+    );
+
+    if (!updatedSession) {
+      return res.status(404).json({ message: 'Chat session not found or user not authorized' });
+    }
+
+    // Respond with minimal confirmation or the updated title/session details
+    res.status(200).json({ 
+      message: 'Chat title updated successfully', 
+      title: updatedSession.title // Send back the updated title
+    }); 
+
+  } catch (error) {
+    console.error('Error updating chat title:', error);
+    res.status(500).json({ message: 'Server error updating chat title' });
+  }
 }; 

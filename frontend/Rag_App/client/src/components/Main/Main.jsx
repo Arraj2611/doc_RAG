@@ -8,6 +8,8 @@ import "./Main.css";
 import { assets } from "../../assets/assets";
 import { Context } from "../../context/Context";
 import { useNavigate } from "react-router-dom";
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import SourcesIcon from '@mui/icons-material/Source'; // Example Icon
 
 // Refined SourcesSidebar component
 const SourcesSidebar = ({ isOpen, sources, onClose }) => {
@@ -19,31 +21,37 @@ const SourcesSidebar = ({ isOpen, sources, onClose }) => {
       <button onClick={onClose} className="close-sidebar-btn" title="Close Sources">×</button>
       <h3>Sources</h3>
       <div className="sidebar-content">
-        {sources.map((source, index) => {
-          if (!source || !source.metadata) return (
-            <div key={index} className="sidebar-source-item error">
-              Source {index + 1}: Invalid data
-            </div>
-          );
-
-          const { content, metadata } = source;
-          const sourceName = metadata.source || 'Unknown Source';
-          const page = metadata.page !== undefined ? `Page: ${metadata.page}` : null;
-          const distance = metadata.distance !== undefined ? `Distance: ${metadata.distance.toFixed(4)}` : null;
-
-          return (
-            <div key={index} className="sidebar-source-item">
-              <h4>Source {index + 1}: {sourceName}</h4>
-              <div className="sidebar-source-meta">
-                {page && <span>{page}</span>}
-                {distance && <span>{distance}</span>}
+        {Array.isArray(sources) && sources.length > 0 ? (
+          sources.map((source, index) => {
+            if (!source || !source.metadata) return (
+              <div key={index} className="sidebar-source-item error">
+                Source {index + 1}: Invalid data
               </div>
-              <div className="sidebar-source-content">
-                {content || 'No content available'}
+            );
+
+            const { content_snippet, metadata } = source;
+            // Use Path manipulation for filename extraction if needed, or directly use metadata.source
+            // Handle potential differences in how source name is stored
+            const sourceName = metadata.source ? metadata.source.split(/[\\/]/).pop() : 'Unknown Source';
+            const page = metadata.page !== undefined && metadata.page !== null ? `Page: ${metadata.page}` : null; // Handle null page
+            const distance = metadata.distance_score !== undefined ? `Distance: ${metadata.distance_score.toFixed(4)}` : null; // Check distance_score
+
+            return (
+              <div key={index} className="sidebar-source-item">
+                <h4>Source {index + 1}: {sourceName}</h4>
+                <div className="sidebar-source-meta">
+                  {page && <span>{page}</span>}
+                  {distance && <span>{distance}</span>}
+                </div>
+                <div className="sidebar-source-content">
+                  {content_snippet || 'No content available'} {/* Display snippet */}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        ) : (
+          <p>No sources available for this message.</p>
+        )}
       </div>
     </div>
   );
@@ -81,22 +89,21 @@ const Main = () => {
     setInput,
     input,
     loading,
-    currentTurnResult,
-    currentTurnSources,
     showResult,
-    handleFileChange,  // Get from context
-    isUploading,       // Get from context
-    processUploadedFiles, // Get from context
-    lastUploadResult,    // Get from context
-    isProcessing,       // Get from context
-    theme,               // Get theme from context
-    processedFiles,      // Get processed files list
-    user, // <<< Get user object from context
-    logout // <<< Get logout function from context
+    handleFileChange,
+    isUploading,
+    processUploadedFiles,
+    lastUploadResult,
+    isProcessing,
+    theme,
+    processedFiles,
+    user,
+    logout
   } = useContext(Context);
 
   // --- Define local state and refs AFTER context --- 
   const [isSourcesSidebarOpen, setIsSourcesSidebarOpen] = useState(false);
+  const [sourcesToShowInSidebar, setSourcesToShowInSidebar] = useState([]);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
   // -------------------------------------------------
@@ -106,14 +113,47 @@ const Main = () => {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory, currentTurnResult]);
+  }, [chatHistory]);
+
+  // Function to trigger file input click
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleSend = () => {
+    // Add log to check input value right before calling onSent
+    console.log(`handleSend triggered. Current input state: "${input}"`);
+    if (input && input.trim()) { // Ensure input is not null/undefined before trimming
+      console.log("Input is valid, calling onSent...");
+      onSent(input);
+    } else {
+      console.warn("Input is empty or only whitespace, onSent not called.");
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // Prevent newline on Enter
+      // Add log here too for consistency
+      console.log(`handleKeyDown (Enter) triggered. Current input state: "${input}"`);
+      handleSend(); // Call the same send logic
+    }
+  };
+
+  // --- Click Handler for Sources Button --- 
+  const handleShowSources = (sources) => {
+    console.log("Showing sources:", sources); // Debug log
+    setSourcesToShowInSidebar(sources || []); // Ensure it's an array
+    setIsSourcesSidebarOpen(true);
+  };
+  // ----------------------------------------
 
   return (
-    <div className="main">
+    <div className={`main ${theme === 'dark' ? 'dark' : ''}`}>
       {/* --- Sidebar for Sources --- */}
       <SourcesSidebar
         isOpen={isSourcesSidebarOpen}
-        sources={currentTurnSources}
+        sources={sourcesToShowInSidebar}
         onClose={() => setIsSourcesSidebarOpen(false)}
       />
       {/* ------------------------- */}
@@ -134,7 +174,7 @@ const Main = () => {
         </div>
         <div className="main-container">
           {/* Show welcome screen only if there's NO history for the current session */}
-          {!chatHistory || chatHistory.length === 0 ? (
+          {!showResult ? (
             <>
               <div className="greet">
                 <p>
@@ -166,47 +206,46 @@ const Main = () => {
           ) : (
             // Display chat history
             <div className="chat-history">
-              {chatHistory.map((message, index) => (
-                <div key={index} className={`message ${message.role}`}>
-                  <img src={message.role === 'user' ? assets.user_icon : assets.gemini_icon} alt={message.role} />
-                  <div className="markdown-content">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message.content}</ReactMarkdown>
+              {chatHistory.map((message, index) => {
+                const isLastMessage = index === chatHistory.length - 1;
+                const hasSources = message.role === 'assistant' && message.sources && message.sources.length > 0;
+
+                return (
+                  <div key={message.id || index} className={`message ${message.role}`}>
+                    <img src={message.role === 'user' ? assets.user_icon : assets.gemini_icon} alt={message.role} />
+                    <div className="message-content-wrapper"> {/* Wrapper for content + button */}
+                      <div className="markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                          {message.content}
+                        </ReactMarkdown>
+                        {loading && message.role === 'assistant' && isLastMessage && (
+                          <span className="loading-cursor">▋</span>
+                        )}
+                      </div>
+                      {/* --- Render Sources Button Conditionally --- */}
+                      {hasSources && (
+                        <div className="sources-button-container-inline">
+                          <button
+                            className="sources-button-inline"
+                            onClick={() => handleShowSources(message.sources)}
+                            title="Show sources for this message"
+                          >
+                            <SourcesIcon fontSize="inherit" /> {/* Icon */}
+                            Sources
+                          </button>
+                        </div>
+                      )}
+                      {/* ------------------------------------------ */}
+                    </div>
                   </div>
-                </div>
-              ))}
-
-              {/* Display the current assistant response while loading */}
-              {loading && (
-                <div className="message assistant">
-                  <img src={assets.gemini_icon} alt="assistant" />
-                  <div className="markdown-content">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{currentTurnResult}</ReactMarkdown>
-                    {/* Optional: Add a blinking cursor or indicator */}
-                    <span className="loading-cursor">▋</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Display sources button for the last completed turn */}
-              {!loading && currentTurnSources && currentTurnSources.length > 0 && (
-                <div className="sources-button-container">
-                  <button
-                    className="sources-button"
-                    onClick={() => setIsSourcesSidebarOpen(true)}
-                  >
-                    Sources ({currentTurnSources.length})
-                  </button>
-                </div>
-              )}
-
-              {/* Empty div to act as scroll target */}
+                );
+              })}
               <div ref={chatEndRef} />
             </div>
           )}
         </div>
 
         <div className="main-bottom">
-          {/* --- Conditional Process Button --- */}
           {lastUploadResult?.success && !isProcessing && (
             <div className="process-trigger-container">
               <button
@@ -218,73 +257,51 @@ const Main = () => {
               </button>
             </div>
           )}
-          {/* --------------------------------- */}
 
-          {/* --- ADD Processed Files Display HERE --- */}
           {processedFiles && processedFiles.length > 0 && (
             <div className="processed-files-container">
-              {/* Simple display for now */}
               <p><strong>Context:</strong> {processedFiles.join(", ")}</p>
             </div>
           )}
-          {/* ----------------------------------------- */}
+
+          <input
+            type="file"
+            multiple
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+            accept=".pdf,.docx"
+          />
 
           <div className="search-box">
-            {/* Hidden File Input - Moved Here */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              multiple
-              style={{ display: 'none' }}
-              accept=".pdf,.docx,.txt,.md"
-            />
-            {/* Input Field */}
             <input
               onChange={(e) => setInput(e.target.value)}
               value={input}
               type="text"
               placeholder="Enter a prompt here, or attach files..."
-              onKeyPress={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey && input.trim()) {
-                  event.preventDefault();
-                  onSent(input);
-                }
-              }}
+              onKeyDown={handleKeyDown}
             />
-            {/* Input Icons */}
             <div>
-              {/* Upload Trigger Icon */}
-              <img
-                src={assets.gallery_icon}
-                alt="Attach Files"
-                title="Attach Files"
-                className={`input-icon ${isUploading ? 'disabled' : ''}`}
-                onClick={() => !isUploading && fileInputRef.current?.click()}
+              <AttachFileIcon
+                className={`input-icon ${isUploading || isProcessing ? 'disabled' : ''}`}
+                onClick={handleAttachClick}
+                style={{ cursor: (isUploading || isProcessing) ? 'not-allowed' : 'pointer' }}
+                title="Attach Files (.pdf, .docx)"
               />
-              {/* Mic Icon (Functionality TBD) */}
               <img
-                src={assets.mic_icon}
-                alt="Use Microphone"
-                title="Use Microphone"
-                className="input-icon"
-              />
-              {/* Send Icon */}
-              <img
-                onClick={() => input.trim() && !loading && onSent(input)}
-                className={`input-icon send-icon ${loading || !input.trim() ? 'disabled' : ''}`}
+                onClick={handleSend}
+                className={`input-icon send-icon ${(!input && !loading) || loading ? 'disabled' : ''}`}
                 src={assets.send_icon}
-                alt="Send"
-                title="Send Message"
+                alt="Send icon"
+                style={{ cursor: (!input && !loading) || loading ? 'not-allowed' : 'pointer' }}
               />
             </div>
           </div>
-          {/* Bottom Info */}
           <p className="bottom-info">
             AI may display inaccurate info. Check responses.
           </p>
         </div>
-      </div> {/* End main-content-area */}
+      </div>
     </div>
   );
 };

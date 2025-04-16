@@ -14,10 +14,10 @@ from weaviate.classes.init import Auth
 from weaviate.classes.config import Property, DataType, Configure, Reconfigure
 from weaviate.classes.query import Filter
 from weaviate.collections.classes.tenants import Tenant
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.documents import Document
 import json
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from dotenv import load_dotenv
 
 # --- Load .env file explicitly if needed ---
@@ -25,42 +25,71 @@ from dotenv import load_dotenv
 load_dotenv()
 # -----------------------------------------
 
-# --- Relative Imports --- 
+# --- Relative Imports (Simplified) --- 
+# Use consistent relative imports within the backend package
+from .ragbase.chain import create_chain, get_session_history 
+from .ragbase import ingest # Import the ingest module itself
+from .ragbase.config import Config 
+from .ragbase.retriever import create_retriever
+from .ragbase.model import create_llm
+# Assuming Ingestor might still be needed from ingestor.py
+# If ragbase/ingestor.py doesn't exist or Ingestor isn't used, remove this line
 try:
-    from ragbase.chain import create_chain, get_session_history 
-    from ragbase import ingest
-    from ragbase.config import Config 
-    from ragbase.retriever import create_retriever
-    from ragbase.model import create_llm
-    from ragbase.ingestor import load_processed_hashes, Ingestor
-    from ragbase.ingest import COLLECTION_NAME # Import the constant
+    from .ragbase.ingestor import Ingestor 
 except ImportError:
-    from .ragbase.chain import create_chain, get_session_history 
-    from .ragbase import ingest
-    from .ragbase.config import Config 
-    from .ragbase.retriever import create_retriever
-    from .ragbase.model import create_llm
-    from .ragbase.ingestor import load_processed_hashes, Ingestor
-    from .ragbase.ingest import COLLECTION_NAME # Import the constant
-# ------------------------
+    print("Warning: Could not import Ingestor from .ragbase.ingestor. If not needed, remove the import line.")
+    Ingestor = None # Define as None to avoid NameErrors if import fails
+
+from .ragbase.ingest import COLLECTION_NAME # Import the constant from ingest.py
+# -------------------------------------
 
 # --- Remove Global Variables --- 
-# weaviate_client: weaviate.Client | None = None 
-chain_instance: Runnable | None = None 
+# REMOVE: chain_instance: Runnable | None = None
 
-# --- Add the missing get_weaviate_client function ---
-def get_weaviate_client():
-    """Dependency to get the Weaviate client from app.state."""
-    from fastapi import Request
-    
-    async def get_client(request: Request):
-        return request.app.state.weaviate_client
-        
-    return get_client
-# ----------------------------------------------------
+# --- Dependency to get Weaviate client --- 
+def get_weaviate_client_dependency(request: Request):
+    """Dependency function to get the client from app state."""
+    client = getattr(request.app.state, 'weaviate_client', None)
+    # If remote mode is expected but client is missing, raise an error
+    if not Config.USE_LOCAL_VECTOR_STORE and client is None:
+         print("ERROR: Weaviate client dependency failed - client not initialized in app state for remote mode.")
+         raise HTTPException(status_code=503, detail="Weaviate client not available")
+    return client
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # --- STARTUP --- 
+    print("--- Application Startup --- ")
+    
+    # 1. Clear tmp upload directory
+    upload_dir = Config.Path.DOCUMENTS_DIR
+    if upload_dir.exists() and upload_dir.is_dir():
+        print(f"Clearing existing upload directory: {upload_dir}")
+        try:
+            shutil.rmtree(upload_dir)
+            print("Upload directory cleared.")
+        except Exception as e:
+            print(f"Warning: Could not clear upload directory {upload_dir}: {e}")
+    # Ensure the directory exists after attempting removal
+    try:
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Ensured upload directory exists: {upload_dir}")
+    except Exception as e:
+         print(f"FATAL: Could not create upload directory {upload_dir}: {e}")
+         # Decide if you want to exit or continue without upload functionality
+         # exit(1)
+
+    # 2. Delete obsolete processed_hashes.json
+    hashes_file = Config.Path.PROCESSED_HASHES_FILE
+    if hashes_file.exists():
+        print(f"Deleting obsolete hashes file: {hashes_file}")
+        try:
+            hashes_file.unlink()
+            print("Obsolete hashes file deleted.")
+        except Exception as e:
+            print(f"Warning: Could not delete obsolete hashes file {hashes_file}: {e}")
+
+    # 3. Initialize Weaviate Client (if needed)
     app.state.weaviate_client = None 
     if not Config.USE_LOCAL_VECTOR_STORE:
         print("Initializing Weaviate client at application startup (Remote Mode)...")
@@ -94,9 +123,11 @@ async def lifespan(app: FastAPI):
         print("Running in LOCAL vector store mode. Weaviate client not initialized.")
         app.state.weaviate_client = None
             
+    print("--- Startup Complete ---")
     yield # Application runs here
     
-    # Shutdown
+    # --- SHUTDOWN --- 
+    print("--- Application Shutdown --- ")
     client_to_close = getattr(app.state, 'weaviate_client', None)
     if client_to_close and hasattr(client_to_close, 'close'):
         print("Closing Weaviate client connection...")
@@ -104,6 +135,7 @@ async def lifespan(app: FastAPI):
         print("Weaviate client closed.")
     else:
         print("No Weaviate client found in app.state to close.")
+    print("--- Shutdown Complete --- ")
 
 # --- Setup FastAPI App with Lifespan --- 
 app = FastAPI(
@@ -131,44 +163,47 @@ app.add_middleware(
     allow_headers=["*"], # Allows all headers
 )
 
-# --- Globals / Shared Resources --- 
-# Remove app_state = {"chain": None} - chain will be managed via get_rag_chain
+# --- REMOVE OLD get_rag_chain FUNCTION --- 
+# def get_rag_chain() -> Runnable | None: 
+#    ... (old logic with global instance) ...
 
-# --- Remove client parameter, pass client to create_chain --- 
-def get_rag_chain() -> Runnable | None: 
-    """Initializes or retrieves the global RAG chain."""
-    global chain_instance
-    if chain_instance is None:
-        print(f"Creating new global RAG chain (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
-        llm = create_llm() # Create LLM
+# --- NEW FUNCTION TO CREATE CHAIN PER REQUEST --- 
+def create_chain_for_request(session_id: str, client: Optional[weaviate.Client] = None) -> Runnable:
+    """Creates a RAG chain instance specifically for the given session_id."""
+    print(f"Creating new RAG chain for session: {session_id} (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
+    llm = create_llm() # Create LLM
 
-        # Initialize retriever and create chain
-        retriever = None
-        if Config.USE_LOCAL_VECTOR_STORE:
-            try:
-                # Create local FAISS retriever
-                retriever = create_retriever(llm)
-                print("Local FAISS retriever created successfully.")
-            except Exception as e:
-                print(f"WARNING: Could not create local retriever: {e}")
-                return None
-            
-            # Create chain with the local retriever
-            try:
-                chain_instance = create_chain(llm=llm, retriever=retriever)
-                print("Chain instance created successfully with local retriever.")
-                return chain_instance
-            except Exception as e:
-                print(f"ERROR: Failed to create chain with local retriever: {e}")
-                return None
-        else:
-            # For Weaviate mode, we'll initialize the chain in the chat endpoint 
-            # where we have access to the client from app.state
-            print("Remote mode detected. Chain will be initialized in the chat endpoint.")
-            return None
+    retriever = None
+    if Config.USE_LOCAL_VECTOR_STORE:
+        # Local FAISS mode
+        try:
+            retriever = create_retriever(llm=llm) # create_retriever handles local setup
+            if retriever is None:
+                 raise ValueError("Failed to create local FAISS retriever.")
+            print("Local FAISS retriever created successfully for chain.")
+        except Exception as e:
+            print(f"ERROR creating local retriever for session {session_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize local retriever: {e}")
+        # Pass retriever to create_chain, client will be None
+        chain = create_chain(llm=llm, retriever=retriever, client=None)
+
     else:
-        # Return existing chain instance
-        return chain_instance
+        # Remote Weaviate mode
+        if not client:
+            # This should ideally be caught by the dependency, but double-check
+            print(f"ERROR: Weaviate client is required for remote mode chain creation (session: {session_id})")
+            raise HTTPException(status_code=500, detail="Weaviate client unavailable for chain creation.")
+        
+        # Pass client to create_chain, retriever will be None
+        # create_chain uses the client to call retrieve_context_weaviate with session_id
+        chain = create_chain(llm=llm, retriever=None, client=client)
+        print(f"Weaviate-based chain created successfully for session {session_id}.")
+
+    if chain is None:
+        # This shouldn't happen if exceptions are raised correctly above
+        raise HTTPException(status_code=500, detail="Failed to create RAG chain.")
+        
+    return chain
 
 # --- Pydantic Models for Request/Response ---
 class ChatRequest(BaseModel):
@@ -194,7 +229,7 @@ class ProcessRequest(BaseModel):
 ALLOWED_EXTENSIONS = { ".pdf", ".docx", ".txt", ".md", ".xlsx", ".csv"} # Add/remove as needed
 
 @app.post("/api/upload", status_code=200)
-async def upload_documents(session_id: str = Form(...), files: list[UploadFile] = File(...)):
+async def upload_documents(session_id: Annotated[str, Form()], files: Annotated[List[UploadFile], File()]) -> Dict:
     """Endpoint to upload one or more documents for a specific session."""
     print(f"Received {len(files)} file(s) for upload in session: {session_id}")
     
@@ -205,237 +240,274 @@ async def upload_documents(session_id: str = Form(...), files: list[UploadFile] 
     # -------------------------------------------
 
     processed_filenames = [] # Keep track of successfully saved files
+    allowed_count = 0
+    skipped_count = 0
 
     for file in files:
-        try:
-            # Validate file extension
-            file_ext = Path(file.filename).suffix.lower()
-            if file_ext not in ALLOWED_EXTENSIONS:
-                print(f"Skipping file with unsupported extension: {file.filename}")
-                continue # Skip this file
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ALLOWED_EXTENSIONS:
+            print(f"Skipping file with unsupported extension: {file.filename}")
+            skipped_count += 1
+            continue # Skip this file
 
+        allowed_count += 1
+        file_path = None # Initialize file_path outside try
+        try:
             safe_filename = Path(file.filename).name
             # --- Save to session-specific directory --- 
             file_path = session_upload_dir / safe_filename
             # -------------------------------------------
             
+            # Use 'await file.read()' and write bytes
+            content = await file.read() 
             with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                buffer.write(content)
+                
             # uploaded_paths.append(file_path) # Store Path object - less critical now
             processed_filenames.append(safe_filename)
             print(f"Saved uploaded file to {file_path}")
+            
         except Exception as e:
             print(f"Error saving file {file.filename} to {session_upload_dir}: {e}")
             traceback.print_exc()
+            # Optionally, continue to next file or raise/return error
+            
         finally:
             # Ensure file handle is closed even if error occurs
-            if file and not file.file.closed:
-                 await file.close()
+            # Check if file object exists and has a close method
+            if file and hasattr(file, 'close') and callable(file.close):
+                try:
+                    await file.close()
+                    print(f"Closed file handle for: {file.filename}")
+                except Exception as close_err:
+                    print(f"Warning: Error closing file handle for {file.filename}: {close_err}")
+            elif file and hasattr(file, 'file') and hasattr(file.file, 'close') and callable(file.file.close):
+                # Handle UploadFile's internal file object if needed (less common)
+                 try:
+                     file.file.close()
+                     print(f"Closed internal file handle for: {file.filename}")
+                 except Exception as close_err:
+                     print(f"Warning: Error closing internal file handle for {file.filename}: {close_err}")
+
+    if allowed_count == 0:
+        raise HTTPException(status_code=400, detail=f"No files with allowed extensions ({', '.join(ALLOWED_EXTENSIONS)}) were provided.")
 
     if not processed_filenames:
-        raise HTTPException(status_code=400, detail="No valid files were successfully saved.")
+        raise HTTPException(status_code=500, detail="All valid files failed to save.")
 
-    return {"message": "Files processed for upload.", "filenames_saved": processed_filenames}
+    return {
+        "message": f"{len(processed_filenames)} valid file(s) uploaded successfully.", 
+        "filenames_saved": processed_filenames,
+        "skipped_unsupported_extension": skipped_count
+    }
 
 @app.post("/api/process", response_model=ProcessResponse)
-async def process_documents(request: ProcessRequest, client: weaviate.Client = Depends(get_weaviate_client())):
-    """Endpoint to trigger processing of uploaded documents for a specific session."""
+async def process_documents(request: ProcessRequest, client: weaviate.Client = Depends(get_weaviate_client_dependency)):
+    # <<< Pass client dependency correctly >>>
     session_id = request.session_id
+    # ... (rest of the processing logic using the passed client) ...
     print(f"DEBUG /api/process: Session ID = {session_id}")
-    print(f"DEBUG /api/process: Weaviate client obtained = {client is not None}")
-    if not client and not Config.USE_LOCAL_VECTOR_STORE:
-        print("ERROR /api/process: Weaviate client is None in non-local mode!")
-        raise HTTPException(status_code=503, detail="Weaviate client not available for processing.")
+    print(f"DEBUG /api/process: Weaviate client obtained via dependency = {client is not None}")
 
     try:
-        print(f"DEBUG /api/process: About to call ingest.process_files_for_session for {session_id}")
-        result = ingest.process_files_for_session(
-            session_id=session_id, 
-            client=client 
-        )
+        # --- Call the updated ingest function --- 
+        # It now handles local mode check internally
+        ingest_result = ingest.process_files_for_session(session_id, client)
+        # -----------------------------------------
+        
         print(f"DEBUG /api/process: Call to ingest.process_files_for_session completed for {session_id}")
-        print(f"DEBUG /api/process: Result = {result}")
-        
-        # --- Construct the response using ProcessResponse model --- 
-        processed_count = result.get("processed_count", 0)
-        skipped_count = result.get("skipped_count", 0)
-        failed_files_list = result.get("failed_files", [])
-        # --- Assume ingest returns 'processed_filenames' --- 
-        processed_filenames = result.get("processed_filenames", []) 
-        # ---------------------------------------------------
-        
-        # Check for significant failure (all failed, none skipped)
-        if failed_files_list and processed_count == 0 and skipped_count == 0:
-             print(f"Processing failed significantly for session {session_id}. Result: {result}")
-             # Return 500 with detail (FastAPI handles JSON response)
-             raise HTTPException(status_code=500, detail=result.get("message", "Processing failed for all files."))
-        
-        print(f"Processing finished for session {session_id}. Result: {result}")
-        # Return successful response including the list of processed files
+        print(f"DEBUG /api/process: Result = {ingest_result}")
+
+        # Return ProcessResponse based on the dictionary from ingest
         return ProcessResponse(
-            message=result.get("message", "Processing completed."),
-            processed_files=processed_filenames, # Include the list here
-            skipped_count=skipped_count,
-            failed_files=failed_files_list
+            message=ingest_result.get("message", "Processing status unknown."),
+            processed_files=ingest_result.get("processed_filenames", []),
+            skipped_count=ingest_result.get("skipped_count", 0),
+            failed_files=ingest_result.get("failed_files", [])
         )
-        # ------------------------------------------------------
-        
+
     except Exception as e:
-        # Catch errors from ingest or within this endpoint
-        print(f"!!!!!!!! UNEXPECTED ERROR in /api/process endpoint for {session_id}: {e} !!!!!!!!")
+        print(f"!!!!!!!! UNEXPECTED ERROR in /api/process endpoint for session {session_id}: {e} !!!!!!!!")
         traceback.print_exc()
-        # Re-raise for FastAPI's default 500 handling
-        raise HTTPException(status_code=500, detail=f"Internal server error during processing endpoint: {e}")
+        # Use 500 for internal server errors
+        raise HTTPException(status_code=500, detail=f"Unexpected error during document processing: {e}")
 
 @app.post("/api/chat")
-async def chat_endpoint(request: Request, chat_req: ChatRequest):
-    """Endpoint to handle chat questions with streaming, sources, and manual history update."""
-    client: weaviate.Client | None = request.app.state.weaviate_client
+async def chat_endpoint(chat_req: ChatRequest, client: weaviate.Client = Depends(get_weaviate_client_dependency)):
+    """Endpoint to handle chat requests and stream responses using standard StreamingResponse."""
     session_id = chat_req.session_id
-    query = chat_req.query # Renamed from 'message' previously
+    query = chat_req.query
 
-    print(f"Chat request for session '{session_id}': Query='{query}' (Streaming, Manual History)")
-
-    if not Config.USE_LOCAL_VECTOR_STORE and not client:
-        raise HTTPException(status_code=503, detail="Weaviate client not available.")
-
-    # Ensure tenant exists for this session
-    if not Config.USE_LOCAL_VECTOR_STORE and client:
-        try:
-            collection_name = Config.Database.WEAVIATE_INDEX_NAME
-            print(f"Checking if tenant '{session_id}' exists in collection '{collection_name}'")
-            if client.collections.exists(collection_name):
-                collection = client.collections.get(collection_name)
-                tenants = collection.tenants.get()
-                tenant_exists = any(
-                    (hasattr(t, 'name') and t.name == session_id) or 
-                    (isinstance(t, str) and t == session_id) or 
-                    (isinstance(t, dict) and t.get('name') == session_id)
-                    for t in tenants
-                )
-                if not tenant_exists:
-                    print(f"Creating tenant '{session_id}' in collection '{collection_name}'")
-                    collection.tenants.create(Tenant(name=session_id))
-                    print(f"Tenant '{session_id}' created successfully")
-                else:
-                    print(f"Tenant '{session_id}' already exists")
-            else:
-                print(f"Collection '{collection_name}' does not exist yet")
-        except Exception as e:
-            print(f"Error checking/creating tenant: {e}")
-            traceback.print_exc()
+    if not session_id or not query:
+        raise HTTPException(status_code=400, detail="session_id and query are required")
 
     try:
-        global chain_instance
-        current_chain = get_rag_chain()
-
-        if current_chain is None and not Config.USE_LOCAL_VECTOR_STORE and client:
-            llm = create_llm()
-            chain_instance = create_chain(llm=llm, client=client)
-            current_chain = chain_instance
-            print("Chain initialized with Weaviate client in chat endpoint.")
-
-        if current_chain is None:
-            raise HTTPException(status_code=503, detail="Chat service not ready. Chain not initialized.")
-
-        chain_input = {"question": query, "session_id": session_id}
-        response_stream = current_chain.astream_events(chain_input, version="v1")
-
-        async def generate_events_and_update_history():
-            final_answer = ""
-            source_documents = []
-            user_message_added = False
-            stream_started = False # Track if we've started receiving answer chunks
-            
-            try:
-                async for event in response_stream:
-                    kind = event["event"]
-                    name = event.get("name", "")
-                    tags = event.get("tags", [])
-                    data = event.get("data", {})
-                    
-                    if not user_message_added:
-                         history = get_session_history(session_id)
-                         history.add_user_message(query)
-                         user_message_added = True
-                         print(f"History DEBUG: Added user message for session {session_id}")
-
-                    print(f"DEBUG: Event received - Kind: {kind}, Name: {name}, Tags: {tags}")
-                    
-                    # --- Listen to the Parser stream for final output chunks --- 
-                    if kind == "on_parser_stream" and name == "StrOutputParser":
-                        chunk = data.get("chunk")
-                        # Ensure chunk is a non-empty string
-                        if isinstance(chunk, str) and chunk:
-                            stream_started = True # Mark that we received answer data
-                            print(f"DEBUG: Yielding answer chunk: {chunk}") # Add log here
-                            yield f"data: {json.dumps({'type': 'answer_chunk', 'content': chunk})}\n\n"
-                            final_answer += chunk
-                    # ---------------------------------------------------------
-
-                    # --- Capture final output (sources) at the end of the parallel step --- 
-                    elif kind == "on_chain_end" and name == "RunnableParallel":
-                         output = data.get("output")
-                         if isinstance(output, dict):
-                             # Final answer check (backup, less likely needed now)
-                             if not stream_started and isinstance(output.get("answer"), str):
-                                 final_answer_backup = output["answer"]
-                                 if final_answer_backup and not final_answer: # Use backup only if stream was empty
-                                     final_answer = final_answer_backup
-                                     print(f"DEBUG: Yielding final answer from end event: {final_answer}")
-                                     yield f"data: {json.dumps({'type': 'answer_chunk', 'content': final_answer})}\n\n"
-                             
-                             # Extract source documents
-                             raw_docs = output.get("source_documents", [])
-                             if raw_docs:
-                                 source_documents = [
-                                     { "source": doc.metadata.get("source", "Unknown"), 
-                                       "page_content": doc.page_content[:200] + "..." if doc.page_content else "",
-                                       "page": doc.metadata.get("page", "N/A")
-                                     } 
-                                     for doc in raw_docs if isinstance(doc, Document)
-                                 ]
-                                 print(f"DEBUG generate_events: Extracted {len(source_documents)} sources.")
-                                 yield f"data: {json.dumps({'type': 'sources', 'content': source_documents})}\n\n"
-                             else:
-                                 print(f"DEBUG generate_events: No source documents found in output.")
-                    # --------------------------------------------------------------------
-            
-            except Exception as e:
-                print(f"Error processing event stream: {e}")
-                traceback.print_exc()
-                yield f"data: {json.dumps({'type': 'error', 'content': f'Error: {str(e)}'})}\n\n"
-            
-            finally:
-                # Manual History Update
-                if final_answer:
-                    history = get_session_history(session_id)
-                    if not history.messages or history.messages[-1].type != 'ai' or history.messages[-1].content != final_answer:
-                       history.add_ai_message(final_answer)
-                       print(f"History DEBUG: Added AI message for session {session_id}")
-                    else:
-                       print(f"History DEBUG: AI message likely already added for session {session_id}")
-
-                # Send final end event
-                print(f"DEBUG generate_events: Final Answer: {final_answer[:100]}...")
-                yield f"data: {json.dumps({'type': 'end', 'content': 'Stream finished'})}\n\n"
-
-        return StreamingResponse(
-            generate_events_and_update_history(), 
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+        rag_chain = create_chain_for_request(session_id, client)
+        config = RunnableConfig(
+            callbacks=[LoggingCallbackHandler("Chat Endpoint Chain")],
+            configurable={
+                "session_id": session_id,
+                "client": client,
+                "user_query": query
+            },
+            recursion_limit=25
         )
 
-    except Exception as e:
-        print(f"Error during chat processing for session '{session_id}': {e}")
-        traceback.print_exc()
-        async def error_stream():
-            error_message = f"An error occurred: {str(e)}"
-            yield f"data: {json.dumps({'type': 'error', 'content': error_message})}\n\n"
-            yield f"data: {json.dumps({'type': 'end', 'content': 'Stream finished due to error'})}\n\n"
-        return StreamingResponse(error_stream(), media_type="text/event-stream", status_code=500)
+        async def stream_response() -> AsyncGenerator[str, Any]:
+            """Async generator formatting output for SSE manually."""
+            event_counter = 0
+            final_sources = [] # <<< Store sources when found
+            try:
+                async for event in rag_chain.astream_events(
+                    {"question": query},
+                    config=config,
+                    version="v1",
+                ):
+                    event_counter += 1
+                    log_event(event, event_counter)
+                    event_type = event["event"]
+                    name = event.get("name", "Unknown")
 
-# --- Revert uvicorn run call for direct script execution --- 
+                    # Capture sources on the END event of the final step
+                    if event_type == "on_chain_end" and name == "FormatAndGenerate":
+                        output_data = event.get("data", {}).get("output", {})
+                        if isinstance(output_data, dict):
+                            final_sources = output_data.get("source_documents", [])
+                            print(f"--- Captured final sources ({len(final_sources)}) on chain end ---")
+                        else:
+                            print(f"Warning: Unexpected output type for {name} end event: {type(output_data)}")
+
+                    # Yield tokens as they stream
+                    elif event_type == "on_chat_model_stream":
+                        content = event["data"]["chunk"].content
+                        if content:
+                            token_json = json.dumps({"type": "token", "content": content})
+                            yield f"data: {token_json}\n\n"
+                            
+                    # Yield errors immediately
+                    elif event_type == "on_chain_error" or event_type == "on_tool_error" or event_type == "on_retriever_error" or event_type == "on_llm_error":
+                        error_message = str(event["data"].get("error", "Unknown stream error"))
+                        print(f"ERROR during stream event: {error_message}")
+                        error_json = json.dumps({"type": "error", "message": error_message})
+                        yield f"data: {error_json}\n\n"
+                        break
+
+            except Exception as e:
+                print(f"ERROR during chain execution or streaming: {e}")
+                traceback.print_exc()
+                error_json = json.dumps({"type": "error", "message": f"Server error during streaming: {e}"})
+                yield f"data: {error_json}\n\n"
+            finally:
+                print("DEBUG stream_response: astream_events loop finished.")
+                
+                # Yield the captured sources *after* the loop finishes, before the end event
+                if final_sources:
+                    try:
+                         sources_json = json.dumps({"type": "sources", "sources": [format_source(s) for s in final_sources]})
+                         print(f"--- Backend Stream: Yielding final sources ({len(final_sources)}) --- ")
+                         yield f"data: {sources_json}\n\n"
+                    except Exception as format_err:
+                         print(f"ERROR formatting final sources: {format_err}")
+                         # Optionally yield an error event here if source formatting fails
+
+                # Send the final 'end' event
+                end_event = json.dumps({"type": "end", "content": "Stream finished"})
+                print("--- Backend Stream: Sent 'end' event ---")
+                yield f"data: {end_event}\n\n"
+
+        # Use standard StreamingResponse
+        headers = {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            # Keep Content-Type as text/event-stream for the frontend
+            'Content-Type': 'text/event-stream' 
+        }
+        return StreamingResponse(stream_response(), media_type="text/event-stream", headers=headers)
+
+    except HTTPException as he:
+        print(f"HTTP Exception in chat endpoint: {he.detail}")
+        raise he
+    except Exception as e:
+        print(f"Unhandled Exception in chat endpoint: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error in chat endpoint: {e}")
+
+# Helper to format source documents
+def format_source(doc: Document) -> Dict:
+    # Basic formatting, adjust as needed
+    metadata = doc.metadata or {}
+    # Calculate distance if embeddings are available (example, adapt if needed)
+    # distance = metadata.get('distance') 
+    return {
+        "content_snippet": doc.page_content[:100] + ("..." if len(doc.page_content) > 100 else ""), # Example snippet
+        "metadata": {
+            "source": metadata.get('source', 'Unknown'),
+            "page": metadata.get('page'),
+            # "distance": float(distance) if distance is not None else None, # Include distance if available
+            # Add other relevant metadata fields
+        }
+    }
+
+# --- Simple Logging Callback Handler --- 
+from langchain_core.callbacks import BaseCallbackHandler
+from typing import Dict, Any, List
+from uuid import UUID
+
+class LoggingCallbackHandler(BaseCallbackHandler):
+    def __init__(self, name: str = "Unnamed Chain"):
+        self.name = name
+        self.event_count = 0
+        
+    def _log(self, event_name: str, run_id: UUID, **kwargs: Any) -> None:
+        self.event_count += 1
+        # print(f"--- {self.name} Callback #{self.event_count} ---")
+        # print(f"  Event: {event_name} (Run ID: {run_id})")
+        # for key, value in kwargs.items():
+        #     print(f"  {key}: {value}")
+        # print("-"*30)
+        pass # Keep it quiet unless debugging
+
+    def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], *, run_id: UUID, parent_run_id: UUID | None = None, tags: List[str] | None = None, metadata: Dict[str, Any] | None = None, **kwargs: Any) -> Any:
+        self._log("on_chain_start", run_id, inputs=inputs, tags=tags, metadata=metadata)
+
+    def on_chain_end(self, outputs: Dict[str, Any], *, run_id: UUID, parent_run_id: UUID | None = None, **kwargs: Any) -> Any:
+        self._log("on_chain_end", run_id, outputs=outputs)
+
+    # Add other on_... methods if you need more detailed logging (on_llm_start, etc.)
+
+def log_event(event: Dict[str, Any], counter: int):
+    """Helper function to log specific details from astream_events."""
+    event_kind = event.get("event")
+    runnable_name = event.get("name", "Unknown Runnable")
+    # print(f"--- Backend Stream Event #{counter} ---")
+    # print(f"  Event Kind: {event_kind}")
+    # print(f"  Runnable Name: {runnable_name}")
+
+    if event_kind == "on_chat_model_stream":
+        chunk_content = event.get("data", {}).get("chunk", None)
+        if chunk_content:
+            # print(f"  Chat Model Chunk: {chunk_content.content!r}")
+            pass # Reduced verbosity
+    elif event_kind == "on_chain_stream" and runnable_name == "RunnableParallel<answer,source_documents>":
+        chunk = event.get("data", {}).get("chunk", {})
+        if chunk.get("source_documents"):
+             # print(f"  Source Documents Found: {len(chunk['source_documents'])}")
+             pass # Reduced verbosity
+    # else:
+        # Log other relevant keys if needed for debugging
+        # other_keys = [k for k in event.get("data", {}).keys() if k != 'chunk' and k != 'input' and k != 'output']
+        # if other_keys:
+        #     print(f"  Other Event Data (Keys): {other_keys}")
+    # print("-"*35)
+    pass # Keep overall logging quiet unless needed
+
+# --- Add Root Endpoint --- 
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the docRAG API!"}
+
+# --- Main execution --- 
 if __name__ == "__main__":
-    # This allows running 'python backend/api.py' from the backend directory
-    uvicorn.run("api:app", host="0.0.0.0", port=8088, reload=True)
+    # Set host to 0.0.0.0 to be accessible externally if needed
+    uvicorn.run(app, host="0.0.0.0", port=8088, reload=True)

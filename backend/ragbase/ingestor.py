@@ -14,7 +14,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from unstructured.partition.auto import partition 
 from unstructured.documents.elements import Element
 
-from ragbase.config import Config
+# --- Relative Imports --- 
+from .config import Config # FIX: Use relative import
+# ------------------------
 
 # Add Weaviate imports
 import weaviate
@@ -26,8 +28,10 @@ from weaviate.collections.classes.data import DataObject
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings 
 
+# --- Relative Imports --- 
 # Bring back local embedder creation
-from ragbase.model import create_embeddings 
+from .model import create_embeddings # FIX: Use relative import
+# ------------------------
 
 # Add json and hashlib for hashing
 import json

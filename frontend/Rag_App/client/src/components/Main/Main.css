@@ -317,9 +317,24 @@
   min-height: 100vh;
   padding-bottom: 15vh;
   position: relative;
-  background-color: #f0f4f9;
-  color: #1f1f1f;
+  background-color: var(--main-bg-color);
+  /* Use CSS variable */
+  color: var(--text-color);
+  /* Use CSS variable */
+
+  /* Add margin to account for fixed sidebar */
+  margin-left: 60px;
+  /* Initial margin for collapsed sidebar */
+  /* Add transition for smooth margin change */
+  transition: margin-left 0.3s ease;
 }
+
+/* Add rule for expanded sidebar later */
+/*
+body.sidebar-extended .main {
+  margin-left: 250px; 
+}
+*/
 
 .main .nav {
   display: flex;
@@ -683,7 +698,8 @@
 
 .sources-button-container {
   text-align: left;
-  margin-top: 15px;
+  margin-top: 10px;
+  margin-bottom: 5px;
 }
 
 .sources-button {
@@ -831,6 +847,56 @@
   word-wrap: break-word;
   overflow-wrap: break-word;
   color: #1f1f1f;
+}
+
+/* NEW: Wrapper for content + source button */
+.message-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* Align button left for assistant */
+}
+
+.message.user .message-content-wrapper {
+  align-items: flex-end;
+  /* Align button right for user (if needed later) */
+}
+
+/* NEW: Styles for inline sources button container */
+.sources-button-container-inline {
+  margin-top: 8px;
+  /* Space between content and button */
+  margin-bottom: 5px;
+}
+
+/* NEW: Styles for the inline sources button */
+.sources-button-inline {
+  background-color: #e8f0fe;
+  color: #1967d2;
+  border: 1px solid #d2e3fc;
+  border-radius: 15px;
+  padding: 4px 10px;
+  /* Smaller padding */
+  font-size: 0.8em;
+  /* Smaller font */
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  /* Align icon and text */
+  align-items: center;
+  gap: 4px;
+  /* Space between icon and text */
+}
+
+.sources-button-inline:hover {
+  background-color: #d2e3fc;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.sources-button-inline svg {
+  font-size: 1.1em;
+  /* Slightly adjust icon size */
 }
 
 .message.user .markdown-content {
@@ -1031,7 +1097,30 @@ body.dark .sidebar {
   color: #e8eaed;
 }
 
-/* ... other sidebar dark styles ... */
+/* --- Add Dark Mode overrides for Sidebar items --- */
+body.dark .sidebar .new-chat,
+body.dark .sidebar .recent-entry,
+body.dark .sidebar .bottom-item {
+  color: #e8eaed;
+  /* Set text color for items */
+}
+
+/* Optional: Slightly adjust hover/active states for dark mode if needed */
+body.dark .sidebar .new-chat:hover,
+body.dark .sidebar .recent-entry:hover,
+body.dark .sidebar .bottom-item:hover {
+  background-color: #303134;
+  /* Darker hover background */
+}
+
+body.dark .sidebar .recent-entry.active {
+  background-color: #3c4043;
+  /* Darker active background */
+  /* Color is already inherited correctly */
+}
+
+/* ----------------------------------------------- */
+
 
 body.dark .sources-sidebar {
   background-color: #282a2c;
@@ -1065,3 +1154,71 @@ body.dark .sources-sidebar {
 }
 
 /* ----------------------------- */
+
+/* NEW: Dark theme for inline sources button */
+body.dark .main .sources-button-inline {
+  background-color: #1a2e44;
+  color: #8ab4f8;
+  border: 1px solid #5f6368;
+}
+
+body.dark .main .sources-button-inline:hover {
+  background-color: #283a50;
+}
+
+/* --- Dark Theme Overrides for Sources Sidebar --- */
+body.dark .sources-sidebar {
+  background-color: #282a2c;
+  /* Dark background */
+  color: #e8eaed;
+  /* Light text */
+  border-left: 1px solid #444;
+  /* Slightly lighter border */
+}
+
+body.dark .sources-sidebar .close-sidebar-btn {
+  color: #bdc1c6;
+  /* Lighter close button color */
+}
+
+body.dark .sources-sidebar h3 {
+  color: #e8eaed;
+  /* Light heading text */
+}
+
+body.dark .sources-sidebar .sidebar-source-item {
+  background-color: #303134;
+  /* Darker item background */
+  border-color: #444746;
+  /* Darker border */
+}
+
+body.dark .sources-sidebar .sidebar-source-item h4 {
+  color: #8ab4f8;
+  /* Light blue for source name */
+}
+
+body.dark .sources-sidebar .sidebar-source-meta {
+  color: #9aa0a6;
+  /* Lighter grey for meta text */
+}
+
+body.dark .sources-sidebar .sidebar-source-content {
+  background-color: #202124;
+  /* Even darker background for content */
+  color: #bdc1c6;
+  /* Lighter grey text */
+  border-color: #444746;
+}
+
+body.dark .sources-sidebar .sidebar-source-item.error {
+  color: #ff7a7a;
+  /* Lighter red for errors */
+  background-color: #4d2a2a;
+  /* Dark red background */
+  border-color: #6b3a3a;
+}
+
+/* --------------------------------------------- */
+
+/* ... rest of dark theme styles ... */

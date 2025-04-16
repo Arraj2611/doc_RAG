@@ -17,9 +17,9 @@ import { Context } from "./context/Context"; // Import main context
 // Layout component for the main app (Sidebar + Main)
 const AppLayout = () => {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}> {/* Basic layout styling */}
+    <div style={{ minHeight: '100vh' }}>
       <Sidebar />
-      <Main /> {/* Main content will render here */}
+      <Main />
     </div>
   );
 };

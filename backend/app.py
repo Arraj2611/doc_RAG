@@ -10,14 +10,22 @@ from langchain_core.vectorstores import VectorStoreRetriever # Add this import
 from langchain_core.documents import Document # Ensure Document is imported
 # from qdrant_client import QdrantClient # Re-import QdrantClient
 
-from ragbase.chain import create_chain # Keep create_chain
-from ragbase.config import Config
-from ragbase.ingestor import Ingestor
-from ragbase.model import create_llm
-from ragbase.retriever import create_retriever
-from ragbase.uploader import upload_files # Assumes this saves files and returns List[Path]
-
-
+# --- Relative Imports for backend/app.py --- 
+from .ragbase.chain import create_chain # Keep create_chain
+from .ragbase.config import Config
+try:
+    from .ragbase.ingestor import Ingestor
+except ImportError:
+    print("WARNING: app.py could not import Ingestor from .ragbase.ingestor")
+    Ingestor = None
+from .ragbase.model import create_llm
+from .ragbase.retriever import create_retriever
+try:
+    from .ragbase.uploader import upload_files # Assumes this saves files and returns List[Path]
+except ImportError:
+    print("WARNING: app.py could not import upload_files from .ragbase.uploader")
+    upload_files = None
+# -------------------------------------------
 
 load_dotenv()
 
@@ -57,7 +65,7 @@ def build_qa_chain(_files_to_process):
 
     st.info(f"Starting ingestion & FAISS index creation for {len(file_paths)} file(s)...") # Log change
     # Create Ingestor instance - no client needed
-    from ragbase.config import Config
+    from .ragbase.config import Config
     # Ensure USE_LOCAL_VECTOR_STORE is True to avoid Weaviate client requirement
     if not Config.USE_LOCAL_VECTOR_STORE:
         print("WARNING: Setting USE_LOCAL_VECTOR_STORE to True for Streamlit app")
