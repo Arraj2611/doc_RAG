@@ -27,12 +27,13 @@ from .ingest import COLLECTION_NAME, TEXT_KEY
 # --- Prompt Setup ---
 # Update SYSTEM_PROMPT to include chat_history instructions
 SYSTEM_PROMPT = (
-    "You are a helpful assistant who answers questions based ONLY on the provided context. "
-    "If the answer is not found in the context, respond with 'Answer cannot be found.'. "
-    "Consider the chat history provided for context, but prioritize the current question and the retrieved document context." 
-    "\n\n"
+    "You are a helpful assistant that answers questions primarily using the provided context. "
+    "If the context is sufficient, use it directly to answer. "
+    "If the context is limited or not directly relevant, you may still attempt to answer based on general knowledge, "
+    "but clearly state that the document context is limited and the response is based on AI reasoning and may be inaccurate.\n\n"
     "Context:\n{context}\n"
 )
+
 
 # --- Chat History Management --- 
 store = {} # In-memory store (replace with DB interaction later)
