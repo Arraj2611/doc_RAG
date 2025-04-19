@@ -1,0 +1,19 @@
+/* 
+   Custom Markdown Styles (Overrides for Tailwind Prose)
+   Add any specific CSS overrides for markdown elements here if needed.
+   For example:
+
+   .prose code::before, .prose code::after {
+     content: none; // Remove backticks around inline code if desired
+   }
+
+   .prose pre {
+     background-color: #f0f0f0; // Example: Custom background for code blocks
+     border-radius: 4px;
+     padding: 1em;
+   }
+
+   .prose blockquote {
+      border-left-color: #your-color; 
+   }
+*/
