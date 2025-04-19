@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Request, BackgroundTasks, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 import uvicorn
 import os
 import shutil
@@ -25,6 +25,7 @@ import aiofiles
 import uuid
 import logging
 import PyPDF2
+from passlib.context import CryptContext
 
 # --- Load .env file explicitly if needed ---
 # Usually FastAPI/Uvicorn handle this, but being explicit can help
@@ -267,7 +268,24 @@ class InsightData(BaseModel):
 class InsightRequest(BaseModel):
     session_id: str
     insight: str = Field(..., min_length=1)
-# -------------------------------------
+
+# --- NEW Authentication Models ---
+class UserBase(BaseModel):
+    username: str = Field(..., min_length=3)
+    email: EmailStr # Use EmailStr for validation
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6)
+
+class UserResponse(UserBase):
+    id: str
+    created_at: datetime
+    
+# --- END NEW Authentication Models ---
+
+# --- Setup Password Hashing Context ---
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# ------------------------------------
 
 # --- API Endpoints ---
 
@@ -757,6 +775,55 @@ async def delete_document_endpoint(session_id: str, client: weaviate.Client = De
     else:
         print(f"--- Successfully deleted DB data for session: {session_id} (File system deletion skipped) ---")
         return {"message": f"Successfully deleted document database entries for session {session_id}. File system deletion skipped."}
+
+# --- NEW Authentication Endpoints ---
+
+@app.post("/api/auth/register", response_model=UserResponse, status_code=201)
+async def register_user(user_data: UserCreate):
+    """Handles user registration."""
+    print(f"--- Received request to register user: {user_data.username} ({user_data.email}) ---")
+    
+    # Check for existing user (redundant check, mongo_handler also checks, but good practice)
+    # You could add a get_user_by_email here if desired
+    existing_by_username = mongo_handler.get_user_by_username(user_data.username)
+    if existing_by_username:
+        print(f"  [Register] Error: Username '{user_data.username}' already taken.")
+        raise HTTPException(status_code=400, detail="Username already registered")
+    
+    # Hash the password
+    try:
+        hashed_password = pwd_context.hash(user_data.password)
+        print(f"  [Register] Password hashed successfully for {user_data.username}.")
+    except Exception as hash_err:
+        print(f"  [Register] Error hashing password for {user_data.username}: {hash_err}")
+        raise HTTPException(status_code=500, detail="Error processing registration data")
+        
+    # Create user in DB
+    creation_result = mongo_handler.create_user(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hashed_password
+    )
+    
+    # Handle potential errors from DB creation
+    if not creation_result:
+        print(f"  [Register] Error: MongoDB handler returned None for {user_data.username}.")
+        raise HTTPException(status_code=500, detail="User creation failed (internal error).")
+        
+    if "error" in creation_result:
+        error_detail = creation_result["error"]
+        print(f"  [Register] Error from MongoDB handler: {error_detail}")
+        # Check if the error is one we expect (like duplicate email)
+        if "already exists" in error_detail or "already registered" in error_detail:
+             raise HTTPException(status_code=400, detail=error_detail)
+        else:
+             raise HTTPException(status_code=500, detail=f"User creation failed: {error_detail}")
+
+    # Successfully created - creation_result contains the user dict (without password)
+    print(f"--- User '{user_data.username}' registered successfully. ID: {creation_result.get('id')} ---")
+    return UserResponse(**creation_result)
+
+# --- END NEW Authentication Endpoints ---
 
 # --- Root Endpoint --- 
 @app.get("/")

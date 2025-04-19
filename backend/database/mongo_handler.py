@@ -20,6 +20,7 @@ MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "doc_rag_db") # Default DB name if no
 DOCUMENTS_COLLECTION = "documents"
 HISTORY_COLLECTION = "chat_history"
 INSIGHTS_COLLECTION = "insights"
+USERS_COLLECTION = "users"
 
 # Logger setup
 logging.basicConfig(level=logging.INFO)
@@ -232,6 +233,72 @@ def delete_insight_by_id(insight_id: str) -> bool:
     except Exception as e:
         logger.error(f"Error deleting insight with id {insight_id}: {e}")
         return False
+
+# --- NEW: User Authentication Functions --- 
+
+def create_user(username: str, email: str, hashed_password: str) -> Optional[Dict[str, Any]]:
+    """Creates a new user in the database after checking for existing username/email."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        users_collection: Collection = db[USERS_COLLECTION]
+        
+        # Check if username or email already exists
+        existing_user = users_collection.find_one({"$or": [{'username': username}, {'email': email}]})
+        if existing_user:
+            if existing_user['username'] == username:
+                logger.warning(f"Attempt to create user with existing username: {username}")
+                return {"error": "Username already exists"}
+            else:
+                logger.warning(f"Attempt to create user with existing email: {email}")
+                return {"error": "Email already registered"}
+
+        user_doc = {
+            "username": username,
+            "email": email,
+            "hashed_password": hashed_password,
+            "created_at": datetime.utcnow()
+        }
+        result = users_collection.insert_one(user_doc)
+        logger.info(f"New user created with ID: {result.inserted_id}")
+        
+        # Return the created user data (excluding password) for confirmation
+        created_user = users_collection.find_one(
+            {"_id": result.inserted_id}, 
+            {'hashed_password': 0} # Exclude password hash from response
+        )
+        if created_user and '_id' in created_user: # Convert ObjectId for JSON serialization
+             created_user['id'] = str(created_user.pop('_id'))
+        return created_user
+        
+    except OperationFailure as e:
+        logger.error(f"MongoDB operation failed during user creation for {username}: {e}")
+        return {"error": f"Database error during registration: {e.details}"}
+    except Exception as e:
+        logger.error(f"Unexpected error creating user {username}: {e}")
+        return {"error": "An unexpected error occurred during registration."}
+
+def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a user document by their username."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        users_collection: Collection = db[USERS_COLLECTION]
+        user_doc = users_collection.find_one({"username": username})
+        if user_doc and '_id' in user_doc:
+            user_doc['id'] = str(user_doc.pop('_id'))
+            logger.info(f"Found user by username: {username}")
+            return user_doc # Return the full document including hashed password for login check
+        else:
+            logger.info(f"User not found by username: {username}")
+            return None
+    except Exception as e:
+        logger.error(f"Error retrieving user by username {username}: {e}")
+        return None
+
+# --- END NEW: User Authentication Functions --- 
 
 # --- NEW: Function to delete all data for a session ---
 async def delete_all_session_data(session_id: str) -> Dict[str, int]:

@@ -236,7 +236,7 @@ export default function Dashboard() {
         return <ChatHistory />;
       case 'insights':
         // Pass allUserInsights and loading state to SavedInsights component
-        return <SavedInsights allInsights={allUserInsights} isLoading={isAllInsightsLoading} />;
+        return <SavedInsights />;
       case 'settings':
         return <Settings />;
       case 'help':

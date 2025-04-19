@@ -25,4 +25,8 @@ unstructured[pdf,docx] # Base + PDF and DOCX support
 # Database
 pymongo             # For MongoDB (chat history, metadata)
 
+# Authentication
+passlib[bcrypt]
+email-validator
+
 # Add any other specific dependencies your project uses here
