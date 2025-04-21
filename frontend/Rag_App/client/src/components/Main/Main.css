@@ -1,0 +1,1224 @@
+/* .app-container {
+  min-height: 100vh;
+  display: flex;
+}
+
+.main {
+  flex: 1; 
+}
+
+.main {
+  flex: 1;
+  min-height: 100vh;
+  padding-bottom: 15vh;
+  position: relative;
+}
+
+.main .nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 22px;
+  padding: 20px;
+  color: #585858;
+}
+
+.main .nav img {
+  width: 40px;
+  border-radius: 50%;
+}
+
+.main-container {
+  max-width: 900px;
+  margin: auto;
+}
+
+.main .greet {
+  margin: 50px 0px;
+  font-size: 56px;
+  color: #c4c7c5;
+  font-weight: 500;
+  padding: 20px;
+}
+
+.main .greet span {
+  background: -webkit-linear-gradient(16deg, #4b90ff, #ff5546);
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+}
+.main .cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 15px;
+  padding: 20px;
+}
+.main .card {
+  height: 200px;
+  padding: 15px;
+  background-color: #f0f4f9;
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.main .card img {
+  width: 35px;
+  padding: 5px;
+  position: absolute;
+  background-color: white;
+  border-radius: 20px;
+  bottom: 10px;
+  right: 10px;
+}
+
+.main .card p {
+  color: #585858;
+  font-size: 17px;
+}
+.main .card:hover {
+  background-color: #dfe4ea;
+}
+
+.main-bottom {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  max-width: 900px;
+  padding: 0px 20px;
+  margin: auto;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 20px;
+  border-radius: 50px;
+  background-color: #f0f4f9;
+}
+
+.search-box img {
+  width: 24px;
+  cursor: pointer;
+}
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 8px;
+  font-size: 18px;
+  outline: none;
+}
+
+.search-box div {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.main .bottom-info {
+  font-size: 13px;
+  margin: 15px auto;
+  text-align: center;
+  font-weight: 300;
+} */
+
+/* 
+.main {
+  flex: 1;
+  min-height: 100vh;
+  padding-bottom: 15vh;
+  position: relative;
+}
+
+.main .nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 22px;
+  padding: 20px;
+  color: #585858;
+}
+
+.main .nav img {
+  width: 40px;
+  border-radius: 50%;
+}
+
+.main-container {
+  max-width: 900px;
+  margin: auto;
+}
+
+.main .greet {
+  margin: 50px 0px;
+  font-size: 56px;
+  color: #c4c7c5;
+  font-weight: 500;
+  padding: 20px;
+}
+
+.main .greet span {
+  background: -webkit-linear-gradient(16deg, #4b90ff, #ff5546);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.main .cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 15px;
+  padding: 20px;
+}
+
+.main .card {
+  height: 200px;
+  padding: 15px;
+  background-color: #f0f4f9;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+}
+
+.main .card img {
+  width: 35px;
+  padding: 5px;
+  position: absolute;
+  background-color: white;
+  border-radius: 20px;
+  bottom: 10px;
+  right: 10px;
+}
+
+.main .card p {
+  color: #585858;
+  font-size: 17px;
+}
+
+.main .card:hover {
+  background-color: #dfe4ea;
+}
+
+.main-bottom {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  max-width: 900px;
+  padding: 0px 20px;
+  margin: auto;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background-color: #f0f4f9;
+  padding: 10px 20px;
+  border-radius: 50px;
+}
+
+.search-box img {
+  width: 24px;
+  cursor: pointer;
+}
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px;
+  font-size: 18px;
+}
+
+.search-box div {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.main .bottom-info {
+  font-size: 13px;
+  margin: 15px auto;
+  text-align: center;
+  font-weight: 300;
+}
+
+.result {
+  padding: 0px 5%;
+  max-height: 70vh;
+  overflow-y: scroll;
+}
+
+.result::-webkit-scrollbar {
+  display: none;
+}
+
+.result-title {
+  margin: 40px 0px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.result img {
+  width: 40px;
+  border-radius: 50%;
+}
+.result-data {
+  display: flex;
+  align-items: start;
+  gap: 20px;
+}
+.loader {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.loader hr {
+  border-radius: 4px;
+  border: none;
+  background-color: #f6f7f8;
+  background: linear-gradient(to right, #9ed7ff, #ffffff, #9ed7ff);
+  background-size: 800px 50px;
+  height: 20px;
+  animation: loader 3s infinite linear;
+}
+@keyframes loader {
+  0% {
+    background-position: -800px 0px;
+  }
+  100% {
+    background-position: 800px 0px;
+  }
+}
+.result-data {
+  font-size: 17px;
+  font-weight: 100%;
+  line-height: 1.8;
+} */
+
+
+
+
+
+
+
+
+
+
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+}
+
+.main {
+  flex: 1;
+  min-height: 100vh;
+  padding-bottom: 15vh;
+  position: relative;
+  background-color: var(--main-bg-color);
+  /* Use CSS variable */
+  color: var(--text-color);
+  /* Use CSS variable */
+
+  /* Add margin to account for fixed sidebar */
+  margin-left: 60px;
+  /* Initial margin for collapsed sidebar */
+  /* Add transition for smooth margin change */
+  transition: margin-left 0.3s ease;
+}
+
+/* Add rule for expanded sidebar later */
+/*
+body.sidebar-extended .main {
+  margin-left: 250px; 
+}
+*/
+
+.main .nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 22px;
+  padding: 20px;
+  color: #333;
+}
+
+.main .nav img {
+  width: 40px;
+  border-radius: 50%;
+}
+
+.main-container {
+  max-width: 900px;
+  margin: auto;
+}
+
+.main .greet {
+  margin: 50px 0px;
+  font-size: 56px;
+  color: #3e3e3e;
+  font-weight: 500;
+  padding: 20px;
+}
+
+.main .greet span {
+  background: -webkit-linear-gradient(16deg, #4b90ff, #ff5546);
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.main .cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill,
+      minmax(200px, 1fr));
+  gap: 15px;
+  padding: 20px;
+}
+
+.main .card {
+  height: 200px;
+  padding: 15px;
+  background-color: #ffffff;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s, background-color 0.3s;
+}
+
+.main .card:hover {
+  transform: translateY(-5px);
+  background-color: #f0f4f9;
+}
+
+.main .card img {
+  width: 35px;
+  padding: 5px;
+  position: absolute;
+  background-color: white;
+  border-radius: 20px;
+  bottom: 10px;
+  right: 10px;
+}
+
+.main .card p {
+  color: #585858;
+  font-size: 17px;
+}
+
+/* --- Center Main Bottom Content --- */
+.main-bottom {
+  position: absolute;
+  bottom: 0;
+  /* width: 100%; */
+  /* Remove fixed width */
+  left: 50%;
+  /* Center horizontally */
+  transform: translateX(-50%);
+  /* Fine-tune centering */
+  width: 90%;
+  /* Use percentage width */
+  max-width: 900px;
+  /* Keep max width */
+  padding: 0px 20px 15px 20px;
+  /* Adjust padding, add bottom */
+  /* margin: auto; */
+  /* Remove margin auto */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Center children horizontally */
+}
+
+.process-trigger-container {
+  /* Ensure this takes appropriate width */
+  width: 100%;
+  /* Make button container take width */
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+  /* Add space below button */
+}
+
+.process-button-main {
+  /* Adjust width if needed, e.g., max-content or fixed */
+  width: max-content;
+  padding: 8px 20px;
+  /* Adjust padding */
+}
+
+.search-box {
+  /* Make search box take full width of its centered container */
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background-color: #ffffff;
+  padding: 10px 20px;
+  border-radius: 50px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* --------------------------------- */
+
+.search-box img {
+  width: 24px;
+  cursor: pointer;
+}
+
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 8px;
+  font-size: 18px;
+  color: #1f1f1f;
+}
+
+.search-box div {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.main .bottom-info {
+  /* Already centered text, width adjusts automatically */
+  font-size: 13px;
+  margin: 15px auto 0 auto;
+  /* Adjust margin */
+  text-align: center;
+  font-weight: 300;
+  color: #777;
+  width: 100%;
+  /* Ensure it takes width for centering */
+}
+
+.result {
+  padding: 0px 5%;
+  max-height: 70vh;
+  overflow-y: scroll;
+}
+
+.result::-webkit-scrollbar {
+  display: none;
+}
+
+.result-title {
+  margin: 40px 0px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.result img {
+  width: 40px;
+  border-radius: 50%;
+}
+
+.result-data {
+  display: flex;
+  align-items: start;
+  gap: 20px;
+  font-size: 17px;
+  font-weight: 100%;
+  line-height: 1.8;
+}
+
+.loader {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loader hr {
+  border-radius: 4px;
+  border: none;
+  background-color: #f6f7f8;
+  background: linear-gradient(to right, #9ed7ff, #ffffff, #9ed7ff);
+  background-size: 800px 50px;
+  height: 20px;
+  animation: loader 3s infinite linear;
+}
+
+@keyframes loader {
+  0% {
+    background-position: -800px 0px;
+  }
+
+  100% {
+    background-position: 800px 0px;
+  }
+}
+
+.result-data {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.8;
+  color: #333;
+}
+
+@media (max-width: 768px) {
+  .main .greet {
+    font-size: 36px;
+  }
+
+  .main .cards {
+    grid-template-columns: repeat(auto-fill,
+        minmax(150px, 1fr));
+  }
+
+  .search-box {
+    padding: 8px 15px;
+  }
+
+  .search-box input {
+    font-size: 16px;
+  }
+}
+
+.sources-container {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.sources-container h4 {
+  margin-bottom: 10px;
+  color: #5f6368;
+  font-size: 0.9em;
+}
+
+.source-document {
+  margin-bottom: 10px;
+  background-color: #f8f9fa;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 10px 15px;
+  font-size: 0.85em;
+}
+
+.source-document summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #1a73e8;
+  outline: none;
+}
+
+.source-document details[open] summary {
+  margin-bottom: 8px;
+}
+
+.source-content {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e0e0e0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #3c4043;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.markdown-content {
+  line-height: 1.7;
+  color: #333;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin-top: 1.2em;
+  margin-bottom: 0.6em;
+  line-height: 1.3;
+}
+
+.markdown-content p {
+  margin-bottom: 1em;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-left: 2em;
+  margin-bottom: 1em;
+}
+
+.markdown-content li {
+  margin-bottom: 0.4em;
+}
+
+.markdown-content code {
+  background-color: #e8eaed;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.markdown-content pre {
+  background-color: #e8eaed;
+  padding: 1em;
+  border-radius: 5px;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+
+.markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid #ccc;
+  padding-left: 1em;
+  margin-left: 0;
+  margin-bottom: 1em;
+  color: #555;
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  width: auto;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid #ccc;
+  padding: 0.5em 0.8em;
+}
+
+.markdown-content th {
+  background-color: #f1f1f1;
+}
+
+.sources-button-container {
+  text-align: left;
+  margin-top: 10px;
+  margin-bottom: 5px;
+}
+
+.sources-button {
+  background-color: #e8f0fe;
+  color: #1967d2;
+  border: 1px solid #d2e3fc;
+  border-radius: 15px;
+  padding: 5px 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.sources-button:hover {
+  background-color: #d2e3fc;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sources-sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 350px;
+  max-width: 90%;
+  height: 100%;
+  background-color: #ffffff;
+  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.15);
+  padding: 20px;
+  padding-top: 50px;
+  overflow-y: auto;
+  z-index: 1000;
+  transition: transform 0.3s ease-in-out;
+  transform: translateX(100%);
+}
+
+.sources-sidebar.open {
+  transform: translateX(0);
+}
+
+.close-sidebar-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  font-weight: bold;
+  color: #555;
+  cursor: pointer;
+}
+
+.sources-sidebar h3 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.sidebar-source-item {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+}
+
+.sidebar-source-item h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 1em;
+  color: #1a73e8;
+}
+
+
+
+.sidebar-source-meta {
+  font-size: 0.8em;
+  color: #5f6368;
+  margin-bottom: 8px;
+}
+
+.sidebar-source-meta span {
+  margin-right: 10px;
+}
+
+.sidebar-source-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 0.9em;
+  color: #3c4043;
+  max-height: 200px;
+  overflow-y: auto;
+  background-color: #fff;
+  padding: 8px;
+  border: 1px solid #e8eaed;
+  border-radius: 4px;
+}
+
+.sidebar-source-item.error {
+  color: #d93025;
+  font-style: italic;
+}
+
+.chat-history {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 10px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  max-width: 90%;
+}
+
+.message.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message.assistant {
+  align-self: flex-start;
+}
+
+.message img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+.message.user img {
+  margin-right: 0;
+  margin-left: 10px;
+}
+
+.message .markdown-content {
+  background-color: #f1f3f4;
+  padding: 10px 15px;
+  border-radius: 18px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: #1f1f1f;
+}
+
+/* NEW: Wrapper for content + source button */
+.message-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* Align button left for assistant */
+}
+
+.message.user .message-content-wrapper {
+  align-items: flex-end;
+  /* Align button right for user (if needed later) */
+}
+
+/* NEW: Styles for inline sources button container */
+.sources-button-container-inline {
+  margin-top: 8px;
+  /* Space between content and button */
+  margin-bottom: 5px;
+}
+
+/* NEW: Styles for the inline sources button */
+.sources-button-inline {
+  background-color: #e8f0fe;
+  color: #1967d2;
+  border: 1px solid #d2e3fc;
+  border-radius: 15px;
+  padding: 4px 10px;
+  /* Smaller padding */
+  font-size: 0.8em;
+  /* Smaller font */
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  /* Align icon and text */
+  align-items: center;
+  gap: 4px;
+  /* Space between icon and text */
+}
+
+.sources-button-inline:hover {
+  background-color: #d2e3fc;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.sources-button-inline svg {
+  font-size: 1.1em;
+  /* Slightly adjust icon size */
+}
+
+.message.user .markdown-content {
+  background-color: #e8f0fe;
+  color: #1f1f1f;
+}
+
+.loading-cursor {
+  display: inline-block;
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.send-icon.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-box>div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.input-icon {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.input-icon:hover {
+  opacity: 1;
+}
+
+.input-icon.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+
+
+.process-trigger-container {
+  padding: 0px 20px 10px 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.process-button-main {
+  padding: 8px 15px;
+  border-radius: 5px;
+  border: 1px solid #dadce0;
+  background-color: #e8f0fe;
+  color: #1967d2;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.process-button-main:hover:not(:disabled) {
+  background-color: #d2e3fc;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.process-button-main:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Dark Theme Overrides (Increased Specificity) --- */
+/* Apply dark styles ONLY when elements are INSIDE .main and body is .dark */
+
+body.dark .main {
+  background-color: #1e1f20;
+  color: #e8eaed;
+}
+
+/* --- Increase Specificity for elements INSIDE .main --- */
+body.dark .main .nav p {
+  /* Specificity: body.dark -> .main -> .nav -> p */
+  color: #e8eaed;
+}
+
+body.dark .main .greet span {
+  /* Specificity: body.dark -> .main -> .greet -> span */
+  background: -webkit-linear-gradient(16deg, #a3a6ab, #dde0e2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+body.dark .main .greet p:last-child {
+  /* Specificity: body.dark -> .main -> .greet -> p:last-child */
+  color: #c4c7c5;
+}
+
+body.dark .main .card {
+  /* Specificity: body.dark -> .main -> .card */
+  background-color: #303134;
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
+}
+
+body.dark .main .card p {
+  /* Specificity: body.dark -> .main -> .card -> p */
+  color: #e8eaed;
+}
+
+body.dark .main .search-box {
+  /* Specificity: body.dark -> .main -> .search-box */
+  background-color: #303134;
+}
+
+body.dark .main .search-box input {
+  /* Specificity: body.dark -> .main -> .search-box -> input */
+  background: transparent;
+  color: #e8eaed;
+}
+
+body.dark .main .search-box input::placeholder {
+  /* Specificity: body.dark -> .main -> .search-box -> input::placeholder */
+  color: #9aa0a6;
+}
+
+body.dark .main .input-icon {
+  /* Specificity: body.dark -> .main -> .input-icon */
+  filter: invert(1);
+  opacity: 0.8;
+}
+
+body.dark .main .input-icon.disabled {
+  /* Specificity: body.dark -> .main -> .input-icon.disabled */
+  filter: invert(0.7);
+  opacity: 0.4;
+}
+
+body.dark .main .bottom-info {
+  /* Specificity: body.dark -> .main -> .bottom-info */
+  color: #9aa0a6;
+}
+
+body.dark .main .message .markdown-content {
+  /* Specificity: body.dark -> .main -> .message -> .markdown-content */
+  background-color: #303134;
+  color: #e8eaed;
+}
+
+body.dark .main .message.user .markdown-content {
+  /* Specificity: body.dark -> .main -> .message.user -> .markdown-content */
+  background-color: #1a2e44;
+  color: #e8eaed;
+}
+
+body.dark .main .loading-cursor {
+  /* Specificity: body.dark -> .main -> .loading-cursor */
+  color: #e8eaed;
+}
+
+body.dark .main .sources-button {
+  /* Specificity: body.dark -> .main -> .sources-button */
+  background-color: #1a2e44;
+  color: #8ab4f8;
+  border: 1px solid #5f6368;
+}
+
+body.dark .main .sources-button:hover {
+  /* Specificity: body.dark -> .main -> .sources-button:hover */
+  background-color: #283a50;
+}
+
+body.dark .main .process-button-main {
+  /* Specificity: body.dark -> .main -> .process-button-main */
+  background-color: #1a2e44;
+  color: #8ab4f8;
+  border: 1px solid #5f6368;
+}
+
+body.dark .main .process-button-main:hover:not(:disabled) {
+  /* Specificity: body.dark -> .main -> .process-button-main:hover:not(:disabled) */
+  background-color: #283a50;
+}
+
+body.dark .main .process-button-main:disabled {
+  /* Specificity: body.dark -> .main -> .process-button-main:disabled */
+  background-color: #303134;
+  color: #5f6368;
+  border-color: #5f6368;
+}
+
+/* --- Sidebar rules remain the same (since they worked) --- */
+body.dark .sidebar {
+  background-color: #1e1f20;
+  color: #e8eaed;
+}
+
+/* --- Add Dark Mode overrides for Sidebar items --- */
+body.dark .sidebar .new-chat,
+body.dark .sidebar .recent-entry,
+body.dark .sidebar .bottom-item {
+  color: #e8eaed;
+  /* Set text color for items */
+}
+
+/* Optional: Slightly adjust hover/active states for dark mode if needed */
+body.dark .sidebar .new-chat:hover,
+body.dark .sidebar .recent-entry:hover,
+body.dark .sidebar .bottom-item:hover {
+  background-color: #303134;
+  /* Darker hover background */
+}
+
+body.dark .sidebar .recent-entry.active {
+  background-color: #3c4043;
+  /* Darker active background */
+  /* Color is already inherited correctly */
+}
+
+/* ----------------------------------------------- */
+
+
+body.dark .sources-sidebar {
+  background-color: #282a2c;
+  color: #e8eaed;
+  border-left: 1px solid #444;
+}
+
+/* ... other sources-sidebar dark styles ... */
+
+/* --- Processed Files Display --- */
+.processed-files-container {
+  padding: 10px 15px;
+  margin: 10px auto;
+  max-width: 900px;
+  /* Match chat width */
+  background-color: #e8f0fe;
+  /* A light blue background */
+  border-left: 4px solid #1a73e8;
+  /* Blue left border */
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #3c4043;
+}
+
+.processed-files-container p {
+  margin: 0;
+}
+
+.processed-files-container strong {
+  margin-right: 5px;
+}
+
+/* ----------------------------- */
+
+/* NEW: Dark theme for inline sources button */
+body.dark .main .sources-button-inline {
+  background-color: #1a2e44;
+  color: #8ab4f8;
+  border: 1px solid #5f6368;
+}
+
+body.dark .main .sources-button-inline:hover {
+  background-color: #283a50;
+}
+
+/* --- Dark Theme Overrides for Sources Sidebar --- */
+body.dark .sources-sidebar {
+  background-color: #282a2c;
+  /* Dark background */
+  color: #e8eaed;
+  /* Light text */
+  border-left: 1px solid #444;
+  /* Slightly lighter border */
+}
+
+body.dark .sources-sidebar .close-sidebar-btn {
+  color: #bdc1c6;
+  /* Lighter close button color */
+}
+
+body.dark .sources-sidebar h3 {
+  color: #e8eaed;
+  /* Light heading text */
+}
+
+body.dark .sources-sidebar .sidebar-source-item {
+  background-color: #303134;
+  /* Darker item background */
+  border-color: #444746;
+  /* Darker border */
+}
+
+body.dark .sources-sidebar .sidebar-source-item h4 {
+  color: #8ab4f8;
+  /* Light blue for source name */
+}
+
+body.dark .sources-sidebar .sidebar-source-meta {
+  color: #9aa0a6;
+  /* Lighter grey for meta text */
+}
+
+body.dark .sources-sidebar .sidebar-source-content {
+  background-color: #202124;
+  /* Even darker background for content */
+  color: #bdc1c6;
+  /* Lighter grey text */
+  border-color: #444746;
+}
+
+body.dark .sources-sidebar .sidebar-source-item.error {
+  color: #ff7a7a;
+  /* Lighter red for errors */
+  background-color: #4d2a2a;
+  /* Dark red background */
+  border-color: #6b3a3a;
+}
+
+/* --------------------------------------------- */
+
+/* ... rest of dark theme styles ... */

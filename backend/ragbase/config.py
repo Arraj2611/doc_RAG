@@ -11,9 +11,22 @@ if dotenv_path.is_file():
     print(f"Config: Successfully loaded .env from {dotenv_path}")
 else:
     print(f"Config: WARNING - .env file not found at {dotenv_path}")
+# Explicitly load .env from the 'backend' directory (parent of 'ragbase')
+# Path(__file__) is config.py -> .parent is ragbase/ -> .parent is backend/
+dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+print(f"Config: Attempting to load .env from: {dotenv_path}") # Debug print
+if dotenv_path.is_file():
+    load_dotenv(dotenv_path=dotenv_path, override=True) # Use override=True just in case
+    print(f"Config: Successfully loaded .env from {dotenv_path}")
+else:
+    print(f"Config: WARNING - .env file not found at {dotenv_path}")
 
 class Config:
     # --- Control Flags ---
+    # Set to False to use Weaviate instead of local FAISS
+    USE_LOCAL_VECTOR_STORE = os.getenv('USE_LOCAL_VECTOR_STORE', 'False').lower() == 'true' 
+    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    CONVERSATION_MESSAGE_LIMIT = int(os.getenv('CONVERSATION_MESSAGE_LIMIT', '6'))
     # Set to False to use Weaviate instead of local FAISS
     USE_LOCAL_VECTOR_STORE = os.getenv('USE_LOCAL_VECTOR_STORE', 'False').lower() == 'true' 
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
@@ -26,12 +39,15 @@ class Config:
         IMAGES_DIR = APP_HOME / "images"
         FAISS_INDEX_DIR = APP_HOME / "faiss-index" 
         # Keep hash file path for potential local mode usage or cleanup
+        # Keep hash file path for potential local mode usage or cleanup
         PROCESSED_HASHES_FILE = APP_HOME / "processed_hashes.json"
     
     class Database:
         # These are only used if USE_LOCAL_VECTOR_STORE is False
+        # These are only used if USE_LOCAL_VECTOR_STORE is False
         WEAVIATE_URL = os.getenv("WEAVIATE_URL")
         WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+        WEAVIATE_INDEX_NAME = os.getenv("WEAVIATE_INDEX_NAME", "RaggerIndex") # Use constant name
         WEAVIATE_INDEX_NAME = os.getenv("WEAVIATE_INDEX_NAME", "RaggerIndex") # Use constant name
         WEAVIATE_TEXT_KEY = "text"
         # Added embedding model config for Weaviate
@@ -70,6 +86,9 @@ class Config:
         OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434") 
     
     class Retriever:
+        USE_CHAIN_FILTER = os.getenv('USE_CHAIN_FILTER', 'False').lower() == 'true'
+        SEARCH_TYPE = os.getenv("RETRIEVER_SEARCH_TYPE", "similarity") # e.g., similarity, mmr
+        SEARCH_K = int(os.getenv("RETRIEVER_SEARCH_K", "5")) # Number of docs to retrieve
         USE_CHAIN_FILTER = os.getenv('USE_CHAIN_FILTER', 'False').lower() == 'true'
         SEARCH_TYPE = os.getenv("RETRIEVER_SEARCH_TYPE", "similarity") # e.g., similarity, mmr
         SEARCH_K = int(os.getenv("RETRIEVER_SEARCH_K", "5")) # Number of docs to retrieve

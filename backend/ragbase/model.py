@@ -6,6 +6,7 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_groq import ChatGroq
 import os
 from .config import Config
+from .config import Config
 # from sentence_transformers import SentenceTransformer
 # from typing import List
 # from PIL import Image
