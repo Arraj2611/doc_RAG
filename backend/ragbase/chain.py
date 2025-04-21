@@ -33,10 +33,6 @@ SYSTEM_PROMPT = (
     "If the context is sufficient, use it directly to answer. "
     "If the context is limited or not directly relevant, you may still attempt to answer based on general knowledge, "
     "but clearly state that the document context is limited and the response is based on AI reasoning and may be inaccurate.\n\n"
-    "You are a helpful assistant that answers questions primarily using the provided context. "
-    "If the context is sufficient, use it directly to answer. "
-    "If the context is limited or not directly relevant, you may still attempt to answer based on general knowledge, "
-    "but clearly state that the document context is limited and the response is based on AI reasoning and may be inaccurate.\n\n"
     "Context:\n{context}\n"
 )
 
@@ -140,48 +136,7 @@ def retrieve_context_weaviate(query: str, client: weaviate.Client, session_id: s
 
         # --- Perform nearText vector search targeting the correct named vector --- 
         response = collection_tenant.query.near_text(
-# --- Weaviate Retrieval (Multi-Tenant) ---
-def retrieve_context_weaviate(query: str, client: weaviate.Client, session_id: str) -> List[Document]:
-    """Retrieves context from Weaviate for a specific tenant using nearText vector search against the named vector."""
-    print(f"Retrieving context from Weaviate for tenant '{session_id}' using nearText with query: '{query[:50]}...'")
-    collection_name = COLLECTION_NAME # Use constant defined in ingest.py or Config
-    text_key = TEXT_KEY             # Use constant defined in ingest.py or Config
-    target_vector_name = "content_vector" # The name we gave our vector in ingest.py
-
-    try:
-        if not client.collections.exists(collection_name):
-            print(f"  Warning: Collection '{collection_name}' does not exist. Cannot retrieve.")
-            return []
-
-        collection = client.collections.get(collection_name)
-        collection_tenant = collection.with_tenant(session_id)
-
-        # --- Perform nearText vector search targeting the correct named vector --- 
-        response = collection_tenant.query.near_text(
             query=query,
-            limit=Config.Retriever.SEARCH_K,
-            target_vector=target_vector_name, # Specify the target vector name
-            return_metadata=MetadataQuery(distance=True)
-        )
-        # ----------------------------------------------------------------------
-
-        retrieved_docs = []
-        if response and response.objects:
-             print(f"  Retrieved {len(response.objects)} nearText results from Weaviate.")
-             for obj in response.objects:
-                 metadata = {k: v for k, v in obj.properties.items() if k != text_key}
-                 if obj.metadata and obj.metadata.distance is not None:
-                     metadata["distance_score"] = obj.metadata.distance
-                 doc = Document(
-                     page_content=obj.properties.get(text_key, ""),
-                     metadata=metadata
-                 )
-                 retrieved_docs.append(doc)
-        else:
-            print(f"  No nearText results retrieved from Weaviate for tenant '{session_id}'.")
-
-        return retrieved_docs
-
             limit=Config.Retriever.SEARCH_K,
             target_vector=target_vector_name, # Specify the target vector name
             return_metadata=MetadataQuery(distance=True)
@@ -208,11 +163,8 @@ def retrieve_context_weaviate(query: str, client: weaviate.Client, session_id: s
     except Exception as e:
         print(f"!!!!!!!! ERROR retrieving context from Weaviate (nearText) for tenant '{session_id}': {e} !!!!!!!!")
         traceback.print_exc()
-        print(f"!!!!!!!! ERROR retrieving context from Weaviate (nearText) for tenant '{session_id}': {e} !!!!!!!!")
-        traceback.print_exc()
         return []
 
-# --- Chain Creation (REVISED) ---
 # --- Chain Creation (REVISED) ---
 def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnable:
     """
@@ -225,10 +177,7 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
         retriever: An already initialized retriever (used for local FAISS mode)
     """
     print("--- Creating RAG chain (Revised Structure) ---")
-    print("--- Creating RAG chain (Revised Structure) ---")
 
-    # --- Define Components ---
-    # Prompt remains the same
     # --- Define Components ---
     # Prompt remains the same
     prompt = ChatPromptTemplate.from_messages(
@@ -243,16 +192,9 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
     llm_chain = prompt | llm | StrOutputParser()
 
     # --- Define Retrieval/Formatting Functions ---
-    # LLM part of the chain
-    llm_chain = prompt | llm | StrOutputParser()
-
-    # --- Define Retrieval/Formatting Functions ---
     # Function to retrieve context based on mode (local or remote)
     def get_context(inputs: dict) -> List[Document]: # Added type hint
-    def get_context(inputs: dict) -> List[Document]: # Added type hint
         question = inputs["question"]
-        session_id = inputs["session_id"] # Expects session_id here
-        print(f"DEBUG get_context called for session: {session_id}")
         session_id = inputs["session_id"] # Expects session_id here
         print(f"DEBUG get_context called for session: {session_id}")
         if retriever:
@@ -265,20 +207,8 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
                  print(f"ERROR in local retriever: {e}")
                  traceback.print_exc()
                  return []
-            try:
-                docs = retriever.get_relevant_documents(question)
-                print(f"Local retriever returned {len(docs)} docs.")
-                return docs
-            except Exception as e:
-                 print(f"ERROR in local retriever: {e}")
-                 traceback.print_exc()
-                 return []
         elif client:
             print(f"Using Weaviate retrieval for session '{session_id}'")
-            # retrieve_context_weaviate already has error handling
-            docs = retrieve_context_weaviate(question, client, session_id)
-            print(f"Weaviate retriever returned {len(docs)} docs.")
-            return docs
             # retrieve_context_weaviate already has error handling
             docs = retrieve_context_weaviate(question, client, session_id)
             print(f"Weaviate retriever returned {len(docs)} docs.")
@@ -335,17 +265,8 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
 
         # Step 3: Format docs and prepare LLM input
         | format_and_generate
-        # Step 1: Prepare initial context dict with question and session_id
-        prepare_initial_context
-
-        # Step 2: Fetch docs and history in parallel, **pass question through**
-        | fetch_docs_and_history
-
-        # Step 3: Format docs and prepare LLM input
-        | format_and_generate
     )
 
-    print("RAG chain (Revised Structure) created successfully.")
     print("RAG chain (Revised Structure) created successfully.")
     return rag_chain
 

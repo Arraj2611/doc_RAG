@@ -1,5 +1,4 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Request, BackgroundTasks, Depends, Form
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Request, BackgroundTasks, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 import uvicorn
@@ -15,8 +14,6 @@ from weaviate.classes.init import Auth
 from weaviate.classes.config import Property, DataType, Configure, Reconfigure
 from weaviate.classes.query import Filter
 from weaviate.collections.classes.tenants import Tenant
-from langchain_core.runnables import Runnable, RunnableConfig
-from langchain_core.documents import Document
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.documents import Document
 import json
@@ -52,17 +49,7 @@ from .database import mongo_handler
 
 # --- Remove Global Variables --- 
 # REMOVE: chain_instance: Runnable | None = None
-# REMOVE: chain_instance: Runnable | None = None
 
-# --- Dependency to get Weaviate client --- 
-def get_weaviate_client_dependency(request: Request):
-    """Dependency function to get the client from app state."""
-    client = getattr(request.app.state, 'weaviate_client', None)
-    # If remote mode is expected but client is missing, raise an error
-    if not Config.USE_LOCAL_VECTOR_STORE and client is None:
-         print("ERROR: Weaviate client dependency failed - client not initialized in app state for remote mode.")
-         raise HTTPException(status_code=503, detail="Weaviate client not available")
-    return client
 # --- Dependency to get Weaviate client --- 
 def get_weaviate_client_dependency(request: Request):
     """Dependency function to get the client from app state."""
@@ -107,45 +94,9 @@ async def lifespan(app: FastAPI):
             print(f"Warning: Could not delete obsolete hashes file {hashes_file}: {e}")
 
     # 3. Initialize Weaviate Client (if needed)
-    # --- STARTUP --- 
-    print("--- Application Startup --- ")
-    
-    # 1. Clear tmp upload directory
-    upload_dir = Config.Path.DOCUMENTS_DIR
-    if upload_dir.exists() and upload_dir.is_dir():
-        print(f"Clearing existing upload directory: {upload_dir}")
-        try:
-            shutil.rmtree(upload_dir)
-            print("Upload directory cleared.")
-        except Exception as e:
-            print(f"Warning: Could not clear upload directory {upload_dir}: {e}")
-    # Ensure the directory exists after attempting removal
-    try:
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Ensured upload directory exists: {upload_dir}")
-    except Exception as e:
-         print(f"FATAL: Could not create upload directory {upload_dir}: {e}")
-         # Decide if you want to exit or continue without upload functionality
-         # exit(1)
-
-    # 2. Delete obsolete processed_hashes.json
-    hashes_file = Config.Path.PROCESSED_HASHES_FILE
-    if hashes_file.exists():
-        print(f"Deleting obsolete hashes file: {hashes_file}")
-        try:
-            hashes_file.unlink()
-            print("Obsolete hashes file deleted.")
-        except Exception as e:
-            print(f"Warning: Could not delete obsolete hashes file {hashes_file}: {e}")
-
-    # 3. Initialize Weaviate Client (if needed)
     app.state.weaviate_client = None 
     if not Config.USE_LOCAL_VECTOR_STORE:
         print("Initializing Weaviate client at application startup (Remote Mode)...")
-        weaviate_url = Config.Database.WEAVIATE_URL
-        weaviate_key = Config.Database.WEAVIATE_API_KEY
-        
-        if not weaviate_url or not weaviate_key:
         weaviate_url = Config.Database.WEAVIATE_URL
         weaviate_key = Config.Database.WEAVIATE_API_KEY
         
@@ -154,10 +105,7 @@ async def lifespan(app: FastAPI):
         else:
             try:
                 # Connect WITHOUT extra headers
-                # Connect WITHOUT extra headers
                 client_instance = weaviate.connect_to_wcs(
-                    cluster_url=weaviate_url,
-                    auth_credentials=Auth.api_key(weaviate_key)
                     cluster_url=weaviate_url,
                     auth_credentials=Auth.api_key(weaviate_key)
                 )
@@ -166,21 +114,14 @@ async def lifespan(app: FastAPI):
                 
                 # Startup Check (remains the same)
                 collection_name = COLLECTION_NAME 
-                
-                # Startup Check (remains the same)
-                collection_name = COLLECTION_NAME 
                 if not client_instance.collections.exists(collection_name):
-                    print(f"Weaviate collection '{collection_name}' not found during startup. Will be created by ingest if needed.")
                     print(f"Weaviate collection '{collection_name}' not found during startup. Will be created by ingest if needed.")
                 else:
                     print(f"Weaviate collection '{collection_name}' already exists.")
                     
-                    
             except Exception as e:
                 print(f"ERROR during Weaviate connection or initial check: {e}")
-                print(f"ERROR during Weaviate connection or initial check: {e}")
                 traceback.print_exc()
-                app.state.weaviate_client = None
                 app.state.weaviate_client = None
     else:
         print("Running in LOCAL vector store mode. Weaviate client not initialized.")
@@ -249,29 +190,6 @@ def create_chain_for_request(session_id: str, client: Optional[weaviate.Client] 
     """Creates a RAG chain instance specifically for the given session_id."""
     print(f"Creating new RAG chain for session: {session_id} (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
     llm = create_llm() # Create LLM
-# --- REMOVE OLD get_rag_chain FUNCTION --- 
-# def get_rag_chain() -> Runnable | None: 
-#    ... (old logic with global instance) ...
-
-# --- NEW FUNCTION TO CREATE CHAIN PER REQUEST --- 
-def create_chain_for_request(session_id: str, client: Optional[weaviate.Client] = None) -> Runnable:
-    """Creates a RAG chain instance specifically for the given session_id."""
-    print(f"Creating new RAG chain for session: {session_id} (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
-    llm = create_llm() # Create LLM
-
-    retriever = None
-    if Config.USE_LOCAL_VECTOR_STORE:
-        # Local FAISS mode
-        try:
-            retriever = create_retriever(llm=llm) # create_retriever handles local setup
-            if retriever is None:
-                 raise ValueError("Failed to create local FAISS retriever.")
-            print("Local FAISS retriever created successfully for chain.")
-        except Exception as e:
-            print(f"ERROR creating local retriever for session {session_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to initialize local retriever: {e}")
-        # Pass retriever to create_chain, client will be None
-        chain = create_chain(llm=llm, retriever=retriever, client=None)
 
     retriever = None
     if Config.USE_LOCAL_VECTOR_STORE:
@@ -304,22 +222,6 @@ def create_chain_for_request(session_id: str, client: Optional[weaviate.Client] 
         raise HTTPException(status_code=500, detail="Failed to create RAG chain.")
         
     return chain
-        # Remote Weaviate mode
-        if not client:
-            # This should ideally be caught by the dependency, but double-check
-            print(f"ERROR: Weaviate client is required for remote mode chain creation (session: {session_id})")
-            raise HTTPException(status_code=500, detail="Weaviate client unavailable for chain creation.")
-        
-        # Pass client to create_chain, retriever will be None
-        # create_chain uses the client to call retrieve_context_weaviate with session_id
-        chain = create_chain(llm=llm, retriever=None, client=client)
-        print(f"Weaviate-based chain created successfully for session {session_id}.")
-
-    if chain is None:
-        # This shouldn't happen if exceptions are raised correctly above
-        raise HTTPException(status_code=500, detail="Failed to create RAG chain.")
-        
-    return chain
 
 # --- Pydantic Models for Request/Response ---
 class ChatRequest(BaseModel):
@@ -332,9 +234,6 @@ class ChatResponse(BaseModel):
 
 class ProcessResponse(BaseModel):
     message: str
-    processed_files: List[str] = [] # List of filenames successfully processed & ingested
-    skipped_count: int = 0
-    failed_files: List[str] = []
     processed_files: List[str] = [] # List of filenames successfully processed & ingested
     skipped_count: int = 0
     failed_files: List[str] = []
@@ -452,34 +351,10 @@ async def upload_documents(session_id: Annotated[str, Form()], files: Annotated[
 
     if allowed_count == 0:
         raise HTTPException(status_code=400, detail=f"No files with allowed extensions ({', '.join(ALLOWED_EXTENSIONS)}) were provided.")
-            # Ensure file handle is closed even if error occurs
-            # Check if file object exists and has a close method
-            if file and hasattr(file, 'close') and callable(file.close):
-                try:
-                    await file.close()
-                    print(f"Closed file handle for: {file.filename}")
-                except Exception as close_err:
-                    print(f"Warning: Error closing file handle for {file.filename}: {close_err}")
-            elif file and hasattr(file, 'file') and hasattr(file.file, 'close') and callable(file.file.close):
-                # Handle UploadFile's internal file object if needed (less common)
-                 try:
-                     file.file.close()
-                     print(f"Closed internal file handle for: {file.filename}")
-                 except Exception as close_err:
-                     print(f"Warning: Error closing internal file handle for {file.filename}: {close_err}")
-
-    if allowed_count == 0:
-        raise HTTPException(status_code=400, detail=f"No files with allowed extensions ({', '.join(ALLOWED_EXTENSIONS)}) were provided.")
 
     if not processed_filenames:
         raise HTTPException(status_code=500, detail="All valid files failed to save.")
-        raise HTTPException(status_code=500, detail="All valid files failed to save.")
 
-    return {
-        "message": f"{len(processed_filenames)} valid file(s) uploaded successfully.", 
-        "filenames_saved": processed_filenames,
-        "skipped_unsupported_extension": skipped_count
-    }
     return {
         "message": f"{len(processed_filenames)} valid file(s) uploaded successfully.", 
         "filenames_saved": processed_filenames,
@@ -528,7 +403,6 @@ async def process_documents(request: ProcessRequest, client: weaviate.Client = D
         )
 
     except Exception as e:
-        print(f"!!!!!!!! UNEXPECTED ERROR in /api/process endpoint for session {session_id}: {e} !!!!!!!!")
         print(f"!!!!!!!! UNEXPECTED ERROR in /api/process endpoint for session {session_id}: {e} !!!!!!!!")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Unexpected error during document processing: {e}")
