@@ -20,11 +20,6 @@ import json
 from fastapi.responses import StreamingResponse, JSONResponse, Response, FileResponse
 from dotenv import load_dotenv
 from datetime import datetime
-import stat # For checking file permissions/type
-import aiofiles
-import uuid
-import logging
-import PyPDF2
 from passlib.context import CryptContext
 
 # --- Load .env file explicitly if needed ---

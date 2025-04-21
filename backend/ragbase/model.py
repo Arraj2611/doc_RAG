@@ -37,35 +37,35 @@ def create_embeddings() -> Embeddings:
 
     if provider == "ollama":
         return OllamaEmbeddings(model=model_name)
-    elif provider == "openai":
-        return OpenAIEmbeddings(model=model_name, api_key=Config.Auth.OPENAI_API_KEY)
-    elif provider == "azure_openai":
-        if not Config.Auth.AZURE_OPENAI_API_KEY or not Config.Auth.AZURE_OPENAI_ENDPOINT:
-            raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT")
-        return AzureOpenAIEmbeddings(
-            model=model_name,
-            azure_deployment=model_name, # Often deployment name matches model
-            api_key=Config.Auth.AZURE_OPENAI_API_KEY,
-            azure_endpoint=Config.Auth.AZURE_OPENAI_ENDPOINT,
-            api_version=Config.Auth.AZURE_OPENAI_API_VERSION # Add API version
-        )
-    elif provider == "huggingface_inference":
-        if not Config.Auth.HUGGINGFACE_API_KEY:
-             raise ValueError("HuggingFace Inference API requires HUGGINGFACE_API_KEY")
-        return HuggingFaceInferenceAPIEmbeddings(
-            api_key=Config.Auth.HUGGINGFACE_API_KEY, model_name=model_name
-        )
-    elif provider == "huggingface_local":
-         # For local HF models, uses sentence-transformers library
-        # Ensure device is set correctly (cpu, cuda, mps)
-        model_kwargs = {'device': Config.Embedding.DEVICE}
-        encode_kwargs = {'normalize_embeddings': False}
-        print(f"  Local HF args: model_kwargs={model_kwargs}, encode_kwargs={encode_kwargs}")
-        return HuggingFaceEmbeddings(
-            model_name=model_name,
-            model_kwargs=model_kwargs,
-            encode_kwargs=encode_kwargs
-        )
+    # elif provider == "openai":
+    #     return OpenAIEmbeddings(model=model_name, api_key=Config.Auth.OPENAI_API_KEY)
+    # elif provider == "azure_openai":
+    #     if not Config.Auth.AZURE_OPENAI_API_KEY or not Config.Auth.AZURE_OPENAI_ENDPOINT:
+    #         raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT")
+    #     return AzureOpenAIEmbeddings(
+    #         model=model_name,
+    #         azure_deployment=model_name, # Often deployment name matches model
+    #         api_key=Config.Auth.AZURE_OPENAI_API_KEY,
+    #         azure_endpoint=Config.Auth.AZURE_OPENAI_ENDPOINT,
+    #         api_version=Config.Auth.AZURE_OPENAI_API_VERSION # Add API version
+    #     )
+    # elif provider == "huggingface_inference":
+    #     if not Config.Auth.HUGGINGFACE_API_KEY:
+    #          raise ValueError("HuggingFace Inference API requires HUGGINGFACE_API_KEY")
+    #     return HuggingFaceInferenceAPIEmbeddings(
+    #         api_key=Config.Auth.HUGGINGFACE_API_KEY, model_name=model_name
+    #     )
+    # elif provider == "huggingface_local":
+    #      # For local HF models, uses sentence-transformers library
+    #     # Ensure device is set correctly (cpu, cuda, mps)
+    #     model_kwargs = {'device': Config.Embedding.DEVICE}
+    #     encode_kwargs = {'normalize_embeddings': False}
+    #     print(f"  Local HF args: model_kwargs={model_kwargs}, encode_kwargs={encode_kwargs}")
+    #     return HuggingFaceEmbeddings(
+    #         model_name=model_name,
+    #         model_kwargs=model_kwargs,
+    #         encode_kwargs=encode_kwargs
+    #     )
     # Add other providers like Cohere, Bedrock etc. here
     # elif provider == "cohere":
     #     return CohereEmbeddings(model=model_name, cohere_api_key=Config.Auth.COHERE_API_KEY)
@@ -79,34 +79,34 @@ def create_llm() -> BaseLanguageModel:
     temperature = Config.LLM.TEMPERATURE
     print(f"Creating LLM: Provider='{provider}', Model='{model_name}', Temp={temperature}")
 
-    if provider == "ollama":
-        return Ollama(
-            model=model_name,
-            temperature=temperature,
-            # Add other Ollama parameters if needed
-            base_url=Config.LLM.OLLAMA_BASE_URL 
-        )
-    elif provider == "openai":
-        return ChatOpenAI(
-            model=model_name,
-            temperature=temperature,
-            api_key=Config.Auth.OPENAI_API_KEY,
-            # model_kwargs={"response_format": {"type": "json_object"}}, # If JSON mode needed
-            streaming=True # Enable streaming by default for chat models
-        )
-    elif provider == "azure_openai":
-        if not Config.Auth.AZURE_OPENAI_API_KEY or not Config.Auth.AZURE_OPENAI_ENDPOINT:
-            raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT")
-        return AzureChatOpenAI(
-            model=model_name,
-            azure_deployment=model_name, # Often deployment name matches model
-            temperature=temperature,
-            api_key=Config.Auth.AZURE_OPENAI_API_KEY,
-            azure_endpoint=Config.Auth.AZURE_OPENAI_ENDPOINT,
-            api_version=Config.Auth.AZURE_OPENAI_API_VERSION,
-            streaming=True
-        )
-    elif provider == "groq":
+    # if provider == "ollama":
+    #     return Ollama(
+    #         model=model_name,
+    #         temperature=temperature,
+    #         # Add other Ollama parameters if needed
+    #         base_url=Config.LLM.OLLAMA_BASE_URL 
+    #     )
+    # elif provider == "openai":
+    #     return ChatOpenAI(
+    #         model=model_name,
+    #         temperature=temperature,
+    #         api_key=Config.Auth.OPENAI_API_KEY,
+    #         # model_kwargs={"response_format": {"type": "json_object"}}, # If JSON mode needed
+    #         streaming=True # Enable streaming by default for chat models
+    #     )
+    # elif provider == "azure_openai":
+    #     if not Config.Auth.AZURE_OPENAI_API_KEY or not Config.Auth.AZURE_OPENAI_ENDPOINT:
+    #         raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT")
+    #     return AzureChatOpenAI(
+    #         model=model_name,
+    #         azure_deployment=model_name, # Often deployment name matches model
+    #         temperature=temperature,
+    #         api_key=Config.Auth.AZURE_OPENAI_API_KEY,
+    #         azure_endpoint=Config.Auth.AZURE_OPENAI_ENDPOINT,
+    #         api_version=Config.Auth.AZURE_OPENAI_API_VERSION,
+    #         streaming=True
+    #     )
+    if provider == "groq":
         groq_api_key = Config.Auth.GROQ_API_KEY
         if not groq_api_key:
             raise ValueError("Groq provider requires GROQ_API_KEY in environment variables (.env)")
