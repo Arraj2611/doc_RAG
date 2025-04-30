@@ -7,6 +7,9 @@ import shutil
 from pathlib import Path
 import traceback
 import asyncio
+from langchain_core.callbacks import BaseCallbackHandler
+from typing import Dict, Any, List
+from uuid import UUID
 from typing import List, Dict, Optional, Any, Annotated, AsyncGenerator, Set
 from contextlib import asynccontextmanager
 import weaviate
@@ -160,17 +163,15 @@ app = FastAPI(
     title="docRAG API",
     description="API for interacting with the RAG document chatbot.",
     version="0.1.0",
-    lifespan=lifespan # Register the lifespan context manager
+    lifespan=lifespan
 )
 
 # CORS configuration
-# Update origins if your frontend runs on a different port
 origins = [
     "http://localhost",
-    "http://localhost:5173", # Default Vite port (keep for reference)
-    "http://127.0.0.1:5173", # Default Vite port (keep for reference)
-    "http://localhost:5000", # Add the actual frontend origin
-    # "*",  # Remove wildcard when using specific origins and allow_credentials=True
+    "http://localhost:5173", # Default Vite port 
+    "http://127.0.0.1:5173", # Default Vite port 
+    "http://localhost:5000", # The actual frontend origin
 ]
 
 app.add_middleware(
@@ -543,10 +544,6 @@ def format_source(doc: Document) -> Dict:
     }
 
 # --- Simple Logging Callback Handler --- 
-from langchain_core.callbacks import BaseCallbackHandler
-from typing import Dict, Any, List
-from uuid import UUID
-
 class LoggingCallbackHandler(BaseCallbackHandler):
     def __init__(self, name: str = "Unnamed Chain"):
         self.name = name
@@ -778,8 +775,7 @@ async def register_user(user_data: UserCreate):
     """Handles user registration."""
     print(f"--- Received request to register user: {user_data.username} ({user_data.email}) ---")
     
-    # Check for existing user (redundant check, mongo_handler also checks, but good practice)
-    # You could add a get_user_by_email here if desired
+    
     existing_by_username = mongo_handler.get_user_by_username(user_data.username)
     if existing_by_username:
         print(f"  [Register] Error: Username '{user_data.username}' already taken.")

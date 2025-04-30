@@ -43,14 +43,6 @@ class Config:
 
     class Auth:
         # For provider-specific API keys
-        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-        AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-        AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-        AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2023-07-01-preview")
-        ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-        COHERE_API_KEY = os.getenv("COHERE_API_KEY")
-        GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-        HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
         GROQ_API_KEY = os.getenv("GROQ_API_KEY")
         # Add others as needed
 

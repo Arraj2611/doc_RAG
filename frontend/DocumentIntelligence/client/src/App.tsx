@@ -19,7 +19,6 @@ function Router() {
       <Route path="/auth" component={AuthPage} />
       <Route path="/landing" component={LandingPage} />
       <ProtectedRoute path="/" component={Dashboard} />
-      {/* <ProtectedRoute path="/settings" component={Settings} /> */}
       <Route component={NotFound} />
     </Switch>
   );
