@@ -1,26 +1,13 @@
-from typing import Optional, List, Dict, Any
-
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors.chain_filter import LLMChainFilter
 from langchain_core.language_models import BaseLanguageModel
-from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
-from langchain_weaviate.vectorstores import WeaviateVectorStore
 import weaviate
-from weaviate.classes.init import Auth
 from .config import Config
 from dotenv import load_dotenv
-from fastapi import HTTPException
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_core.documents import Document
 # FAISS/Local imports
-from langchain_community.vectorstores import FAISS 
-from langchain_core.embeddings import Embeddings
+from langchain_community.vectorstores import FAISS
 import os
 # Use relative import for model
-from .model import create_embeddings 
-# Remove Weaviate-specific LC imports and custom class
-from weaviate.classes.query import MetadataQuery, Filter
+from .model import create_embeddings
 
 load_dotenv()
 
@@ -37,7 +24,6 @@ def create_retriever(
         faiss_index_path = str(Config.Path.FAISS_INDEX_DIR / "docs_index")
         if not os.path.exists(faiss_index_path):
             print(f"ERROR: FAISS index not found at {faiss_index_path}. Please run ingestion first.")
-            # Raise or return None - let caller handle
             return None 
         try:
             embeddings = create_embeddings()
@@ -54,9 +40,7 @@ def create_retriever(
             return retriever
         except Exception as e:
             print(f"ERROR loading FAISS index or creating retriever: {e}")
-            # Raise or return None
             return None
     else:
-        # --- Weaviate Mode: No Retriever Object Needed Here --- 
         print("Retriever: Running in Weaviate mode. Retrieval handled directly in chain.")
-        return None # Signal that retrieval is handled elsewhere
+        return None

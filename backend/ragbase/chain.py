@@ -3,25 +3,19 @@ from operator import itemgetter
 from typing import List, Dict
 from pathlib import Path
 import traceback
-import os
 
 from langchain.schema.runnable import RunnablePassthrough, RunnableParallel
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseLanguageModel
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, format_document
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.tracers.stdout import ConsoleCallbackHandler
-from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_core.runnables import RunnableLambda
-from langchain_core.retrievers import BaseRetriever
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 import weaviate
-from weaviate.classes.query import MetadataQuery, Filter
+from weaviate.classes.query import MetadataQuery
 from langchain_core.output_parsers import StrOutputParser
 
-from .retriever import create_retriever
 from .config import Config
 from .ingest import COLLECTION_NAME, TEXT_KEY
 from ..database import mongo_handler
@@ -35,9 +29,6 @@ SYSTEM_PROMPT = (
     "but clearly state that the document context is limited and the response is based on AI reasoning and may be inaccurate.\n\n"
     "Context:\n{context}\n"
 )
-
-
-# --- Chat History Management (MODIFIED) --- 
 
 def remove_links(text: str) -> str:
     url_pattern = r"https?://\S+|www\.\S+"
@@ -134,11 +125,10 @@ def retrieve_context_weaviate(query: str, client: weaviate.Client, session_id: s
         collection = client.collections.get(collection_name)
         collection_tenant = collection.with_tenant(session_id)
 
-        # --- Perform nearText vector search targeting the correct named vector --- 
         response = collection_tenant.query.near_text(
             query=query,
             limit=Config.Retriever.SEARCH_K,
-            target_vector=target_vector_name, # Specify the target vector name
+            target_vector=target_vector_name,
             return_metadata=MetadataQuery(distance=True)
         )
         # ----------------------------------------------------------------------
@@ -179,7 +169,6 @@ def create_chain(llm: BaseLanguageModel, client=None, retriever=None) -> Runnabl
     print("--- Creating RAG chain (Revised Structure) ---")
 
     # --- Define Components ---
-    # Prompt remains the same
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", SYSTEM_PROMPT),

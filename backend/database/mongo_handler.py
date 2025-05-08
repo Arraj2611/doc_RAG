@@ -83,8 +83,6 @@ def save_document_metadata(session_id: str, filename: str, user_id: Optional[str
         return False
     try:
         documents_collection: Collection = db[DOCUMENTS_COLLECTION]
-        # Use upsert to avoid duplicates based on session_id and filename, or just insert if duplicates are ok
-        # Example: Upsert based on session_id (assuming one document per session for simplicity, adjust if needed)
         result = documents_collection.update_one(
             {"session_id": session_id},
             {"$set": {"session_id": session_id, "filename": filename, "user_id": user_id, **kwargs}},
@@ -107,8 +105,6 @@ def get_user_documents(user_id: str) -> List[Dict[str, Any]]:
         return []
     try:
         documents_collection: Collection = db[DOCUMENTS_COLLECTION]
-        # Find documents matching the user_id
-        # Convert ObjectId to string if necessary for JSON serialization later
         user_docs = list(documents_collection.find({"user_id": user_id}, {"_id": 0})) # Exclude MongoDB default _id
         logger.info(f"Retrieved {len(user_docs)} documents for user_id: {user_id}")
         return user_docs
@@ -138,22 +134,19 @@ def add_chat_message(session_id: str, role: str, content: str) -> bool:
         return False
 
 
-def get_chat_history(session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+def  get_chat_history(session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     """Retrieves the chat history for a specific session, ordered by timestamp."""
     db = get_db()
     if db is None:
         return []
     try:
         history_collection: Collection = db[HISTORY_COLLECTION]
-        # Find messages, sort by timestamp, limit results
         history = list(history_collection.find(
                 {"session_id": session_id},
                 {"_id": 0, "session_id": 0} # Exclude _id and session_id from results
             ).sort("timestamp", 1).limit(limit) # Sort ascending (oldest first)
         )
         logger.info(f"Retrieved {len(history)} chat messages for session_id: {session_id}")
-        # Return in the format LangChain expects (or adapt create_chain later)
-        # e.g. [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
         return history
     except Exception as e:
         logger.error(f"Error retrieving chat history for session {session_id}: {e}")
@@ -334,16 +327,11 @@ async def delete_all_session_data(session_id: str) -> Dict[str, int]:
         
     return deleted_counts
 
-# --- Helper for cleaning up ---
-# Consider calling close_mongo_connection() during application shutdown (e.g., FastAPI lifespan)
-
 # Example Usage (for testing)
 if __name__ == '__main__':
     from datetime import datetime # Import for example
 
     print("Running MongoDB Handler Example...")
-    # Ensure .env file has MONGO_CONNECTION_STRING and optionally MONGO_DB_NAME
-
     # Connect
     if not connect_to_mongo():
         print("Exiting due to connection failure.")

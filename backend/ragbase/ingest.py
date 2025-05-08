@@ -4,7 +4,6 @@ import time
 import hashlib
 import traceback
 from typing import List, Dict, Any
-from pathlib import Path
 
 import weaviate
 from weaviate.util import generate_uuid5 # Example for generating IDs
@@ -18,8 +17,6 @@ from weaviate.classes.config import (
     Configure,
     Property,
     DataType,
-    Tokenization,
-    Reconfigure,
 )
 
 # Import Config
@@ -52,13 +49,6 @@ def ensure_collection_exists(client: weaviate.Client):
         # --- Skip verification, just get the existing collection ---
         try:
              collection = client.collections.get(collection_name)
-             # Basic check that MT is enabled, as this is critical for the rest of the code
-             # config = collection.config.get()
-             # mt_config = config.multi_tenancy_config
-             # if not mt_config or not mt_config.enabled:
-             #     print(f"WARNING: Multi-tenancy appears disabled on existing collection '{collection_name}'. This might cause issues.")
-             #     # Decide whether to raise error or proceed cautiously
-             #     # raise ValueError(f"Multi-tenancy is disabled for existing collection '{collection_name}'.")
              return collection
         except Exception as e:
              print(f"!!!!!!!! ERROR getting existing collection '{collection_name}': {e} !!!!!!!!")
@@ -162,9 +152,6 @@ def add_chunks_to_weaviate(client: weaviate.Client, tenant_id: str, chunks: List
             # ---------------------------------------------------------------------
             
             try:
-                # Generate UUID based on content and source to potentially help with deduplication if needed
-                # Note: If content/metadata changes slightly, UUID will change.
-                # Consider a more robust deduplication strategy if required.
                 chunk_uuid = generate_uuid5(properties)
                 
                 batch.add_object(
@@ -174,14 +161,11 @@ def add_chunks_to_weaviate(client: weaviate.Client, tenant_id: str, chunks: List
                 successful_inserts += 1
             except Exception as insert_e:
                 print(f"  ERROR adding chunk {i+1} ({source_identifier}): {insert_e}")
-                # Optionally log the failed chunk data (beware of large logs)
-                # print(f"    Failed chunk properties: {properties}") 
                 failed_inserts += 1
 
     # Check batch results (optional but recommended)
     if batch.number_errors > 0:
         print(f"!!!!!!!! WARNING: Batch insertion for tenant '{tenant_id}' finished with {batch.number_errors} errors !!!!!!!!")
-        # You might want to iterate through batch.errors for details
 
     print(f"  Finished inserting chunks for tenant '{tenant_id}': {successful_inserts} succeeded, {failed_inserts} failed.")
     return failed_inserts == 0
@@ -206,17 +190,6 @@ def load_and_chunk_docs(file_path: str, chunk_size: int = CHUNK_SIZE, chunk_over
         )
         chunks = text_splitter.split_documents(docs)
         print(f"Ingestor: Split into {len(chunks)} chunks.")
-        
-        # --- Optional: Double-check metadata AFTER splitting --- 
-        # It's possible coordinates are re-introduced or modified during splitting,
-        # though less likely. If the strategy="fast" doesn't work, 
-        # we might need to explicitly delete coordinates from `chunks` here.
-        # for i, chunk in enumerate(chunks):
-        #     if chunk.metadata and 'coordinates' in chunk.metadata:
-        #         print(f"    DEBUG: Deleting coordinates from final chunk {i+1}")
-        #         del chunk.metadata['coordinates']
-        # --------------------------------------------------------
-        
         return chunks
     except Exception as e:
         print(f"Error loading/chunking document {file_path}: {e}")
@@ -357,6 +330,3 @@ def process_files_for_session(session_id: str, client: weaviate.Client = None) -
     }
     print(f"Processing result: {result}")
     return result
-
-# Note: You would typically call process_files_for_session from your API endpoint
-#       after potentially getting the Weaviate client instance.

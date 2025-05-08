@@ -4,7 +4,6 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseLanguageModel
 from langchain_groq import ChatGroq
-import os
 from .config import Config
 
 # Add back create_embeddings function
@@ -35,7 +34,6 @@ def create_llm() -> BaseLanguageModel:
                 api_key=groq_api_key,
                 temperature=temperature,
                 model_name=model_name,  
-                # max_tokens=Config.LLM.MAX_TOKENS, # Usually handled by model defaults or prompt
                 streaming=True
             )
             print(f"Groq LLM created successfully (Model: {model_name})")
