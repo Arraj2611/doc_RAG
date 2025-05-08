@@ -60,9 +60,3 @@ def create_retriever(
         # --- Weaviate Mode: No Retriever Object Needed Here --- 
         print("Retriever: Running in Weaviate mode. Retrieval handled directly in chain.")
         return None # Signal that retrieval is handled elsewhere
-
-# Placeholder for direct Weaviate query logic if needed outside chain.py
-# async def query_weaviate_directly(client: weaviate.Client, tenant_id: str, query: str, k: int):
-#     collection = client.collections.get(Config.Database.WEAVIATE_INDEX_NAME).with_tenant(tenant_id)
-#     response = await collection.query.near_text_async(...) # Use async version if in async context
-#     return response 

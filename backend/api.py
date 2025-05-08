@@ -1,12 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Request, BackgroundTasks, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
-import uvicorn
-import os
 import shutil
 from pathlib import Path
 import traceback
-import asyncio
 from langchain_core.callbacks import BaseCallbackHandler
 from typing import Dict, Any, List
 from uuid import UUID
@@ -14,45 +11,26 @@ from typing import List, Dict, Optional, Any, Annotated, AsyncGenerator, Set
 from contextlib import asynccontextmanager
 import weaviate
 from weaviate.classes.init import Auth
-from weaviate.classes.config import Property, DataType, Configure, Reconfigure
-from weaviate.classes.query import Filter
 from weaviate.collections.classes.tenants import Tenant
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.documents import Document
 import json
-from fastapi.responses import StreamingResponse, JSONResponse, Response, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from dotenv import load_dotenv
 from datetime import datetime
 from passlib.context import CryptContext
 
-# --- Load .env file explicitly if needed ---
-# Usually FastAPI/Uvicorn handle this, but being explicit can help
-load_dotenv()
-# -----------------------------------------
-
-# --- Relative Imports (Simplified) --- 
-# Use consistent relative imports within the backend package
-from .ragbase.chain import create_chain, get_session_history, save_message_pair
-from .ragbase import ingest # Import the ingest module itself
+from .ragbase.chain import create_chain, save_message_pair
+from .ragbase import ingest
 from .ragbase.config import Config 
 from .ragbase.retriever import create_retriever
 from .ragbase.model import create_llm
-# Assuming Ingestor might still be needed from ingestor.py
-# If ragbase/ingestor.py doesn't exist or Ingestor isn't used, remove this line
-try:
-    from .ragbase.ingestor import Ingestor 
-except ImportError:
-    print("Warning: Could not import Ingestor from .ragbase.ingestor. If not needed, remove the import line.")
-    Ingestor = None # Define as None to avoid NameErrors if import fails
-
-from .ragbase.ingest import COLLECTION_NAME # Import the constant from ingest.py
-# --- Import MongoDB Handler --- 
+from .ragbase.ingest import COLLECTION_NAME
 from .database import mongo_handler
+
+load_dotenv()
+
 # -----------------------------
-
-# --- Remove Global Variables --- 
-# REMOVE: chain_instance: Runnable | None = None
-
 # --- Dependency to get Weaviate client --- 
 def get_weaviate_client_dependency(request: Request):
     """Dependency function to get the client from app state."""
@@ -182,11 +160,8 @@ app.add_middleware(
     allow_headers=["*"], # Allows all headers
 )
 
-# --- REMOVE OLD get_rag_chain FUNCTION --- 
-# def get_rag_chain() -> Runnable | None: 
-#    ... (old logic with global instance) ...
 
-# --- NEW FUNCTION TO CREATE CHAIN PER REQUEST --- 
+# --- NEW FUNCTION TO CREATE CHAIN --- 
 def create_chain_for_request(session_id: str, client: Optional[weaviate.Client] = None) -> Runnable:
     """Creates a RAG chain instance specifically for the given session_id."""
     print(f"Creating new RAG chain for session: {session_id} (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
@@ -531,15 +506,11 @@ async def chat_endpoint(chat_req: ChatRequest, background_tasks: BackgroundTasks
 def format_source(doc: Document) -> Dict:
     # Basic formatting, adjust as needed
     metadata = doc.metadata or {}
-    # Calculate distance if embeddings are available (example, adapt if needed)
-    # distance = metadata.get('distance') 
     return {
         "content_snippet": doc.page_content[:100] + ("..." if len(doc.page_content) > 100 else ""), # Example snippet
         "metadata": {
             "source": metadata.get('source', 'Unknown'),
             "page": metadata.get('page'),
-            # "distance": float(distance) if distance is not None else None, # Include distance if available
-            # Add other relevant metadata fields
         }
     }
 
@@ -551,12 +522,7 @@ class LoggingCallbackHandler(BaseCallbackHandler):
         
     def _log(self, event_name: str, run_id: UUID, **kwargs: Any) -> None:
         self.event_count += 1
-        # print(f"--- {self.name} Callback #{self.event_count} ---")
-        # print(f"  Event: {event_name} (Run ID: {run_id})")
-        # for key, value in kwargs.items():
-        #     print(f"  {key}: {value}")
-        # print("-"*30)
-        pass # Keep it quiet unless debugging
+        pass
 
     def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], *, run_id: UUID, parent_run_id: UUID | None = None, tags: List[str] | None = None, metadata: Dict[str, Any] | None = None, **kwargs: Any) -> Any:
         self._log("on_chain_start", run_id, inputs=inputs, tags=tags, metadata=metadata)
@@ -570,31 +536,16 @@ def log_event(event: Dict[str, Any], counter: int):
     """Helper function to log specific details from astream_events."""
     event_kind = event.get("event")
     runnable_name = event.get("name", "Unknown Runnable")
-    # print(f"--- Backend Stream Event #{counter} ---")
-    # print(f"  Event Kind: {event_kind}")
-    # print(f"  Runnable Name: {runnable_name}")
 
     if event_kind == "on_chat_model_stream":
         chunk_content = event.get("data", {}).get("chunk", None)
         if chunk_content:
-            # print(f"  Chat Model Chunk: {chunk_content.content!r}")
             pass # Reduced verbosity
     elif event_kind == "on_chain_stream" and runnable_name == "RunnableParallel<answer,source_documents>":
         chunk = event.get("data", {}).get("chunk", {})
         if chunk.get("source_documents"):
-             # print(f"  Source Documents Found: {len(chunk['source_documents'])}")
              pass # Reduced verbosity
-    # else:
-        # Log other relevant keys if needed for debugging
-        # other_keys = [k for k in event.get("data", {}).keys() if k != 'chunk' and k != 'input' and k != 'output']
-        # if other_keys:
-        #     print(f"  Other Event Data (Keys): {other_keys}")
-    # print("-"*35)
     pass # Keep overall logging quiet unless needed
-
-# --- NEW MongoDB Endpoints --- 
-
-# TODO: Add Authentication/Authorization checks to endpoints needing user context
 
 @app.get("/api/documents", response_model=List[DocumentMetadata])
 async def get_documents_for_user(user_id: str): # How to get user_id? Auth needed.
@@ -678,27 +629,6 @@ async def delete_document_endpoint(session_id: str, client: weaviate.Client = De
     # TODO: Add user authentication check - ensure user owns this session_id
     
     errors = []
-    # filename_to_delete = "Unknown"
-    # doc_metadata = None
-
-    # --- TEMPORARILY SKIPPED: Metadata Fetching & File Deletion (Requires Auth) --- 
-    # # 1. Get Document Filename from MongoDB (needed for file deletion)
-    # try:
-    #     print(f"  [Delete] Fetching document metadata from MongoDB for session {session_id}...")
-    #     # This needs user_id which we don't have securely yet.
-    #     # For now, we skip fetching metadata and deleting the file.
-    #     # Replace with get_document_by_session_id or similar if added later.
-    #     # all_user_docs = mongo_handler.get_user_documents(user_id_from_auth)
-    #     # doc_metadata = next((doc for doc in all_user_docs if doc.get('session_id') == session_id), None)
-    #     # if doc_metadata:
-    #     #     filename_to_delete = doc_metadata.get('filename', 'Unknown')
-    #     #     print(f"  [Delete] Found filename: {filename_to_delete}")
-    #     # else:
-    #     #     print(f"  [Delete] No document metadata found in MongoDB for session {session_id}.")
-    # except Exception as mongo_meta_err:
-    #     error_msg = f"Error fetching metadata from MongoDB: {mongo_meta_err}"
-    #     print(f"  [Delete] {error_msg}")
-    #     errors.append(error_msg)
     filename_to_delete = "Unknown" # Keep this as Unknown since we skipped fetch
     print("  [Delete] WARNING: Skipping metadata fetch and file deletion due to missing authentication.")
     # ----------------------------------------------------------------------------
@@ -742,22 +672,6 @@ async def delete_document_endpoint(session_id: str, client: weaviate.Client = De
         print(f"  [Delete] {error_msg}")
         errors.append(error_msg)
 
-    # 4. Delete Uploaded File (Temporarily Skipped)
-    # if filename_to_delete != "Unknown":
-    #     try:
-    #         file_dir = Config.Path.DOCUMENTS_DIR / session_id
-    #         print(f"  [Delete] Attempting to delete file directory: {file_dir}...")
-    #         if file_dir.exists() and file_dir.is_dir():
-    #              shutil.rmtree(file_dir)
-    #              print(f"  [Delete] Successfully deleted directory: {file_dir}")
-    #         else:
-    #              print(f"  [Delete] File directory not found or not a directory: {file_dir}. Skipping file deletion.")
-    #     except Exception as file_err:
-    #         error_msg = f"Error deleting directory for session {session_id}: {file_err}"
-    #         print(f"  [Delete] {error_msg}")
-    #         errors.append(error_msg)
-    # else:
-    #     print(f"  [Delete] Filename unknown, skipping file/directory deletion for session {session_id}.")
     print(f"  [Delete] WARNING: Skipping file/directory deletion for session {session_id}.")
 
     # 5. Return Response
@@ -820,15 +734,3 @@ async def register_user(user_data: UserCreate):
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the DocRAG API"}
-
-# --- Main Execution (for running directly) --- 
-# if __name__ == "__main__":
-#     print("Starting FastAPI server...")
-#     uvicorn.run(
-#         "api:app", # Changed from app:app if api.py is the entry point
-#         host=Config.Network.HOST,
-#         port=Config.Network.PORT,
-#         reload=Config.Network.RELOAD, # Use reload config
-#         log_level=Config.Logging.LEVEL.lower(), # Use log level config
-#     )
-#     print("FastAPI server stopped.")
