@@ -13,8 +13,8 @@ WORKDIR /app
 # RUN apt-get update && apt-get install -y libreoffice tesseract-ocr poppler-utils && rm -rf /var/lib/apt/lists/*
 
 # In your Dockerfile
-COPY requirements.lock.txt .
-RUN pip install --no-cache-dir -r requirements.lock.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the entire backend directory into the container
 COPY . ./backend/
