@@ -3,4 +3,7 @@
 *.db
 *.pyc
 venv/
+venv_deploy/
 *doc_rag/*
+dockerfile
+docker-compose.yml

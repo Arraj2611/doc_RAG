@@ -25,6 +25,10 @@ unstructured[pdf,docx] # Base + PDF and DOCX support
 # Database
 pymongo             # For MongoDB (chat history, metadata)
 
+# Cloud Provider SDKs
+# oci-python-sdk      # For Oracle Cloud Infrastructure (e.g., Object Storage)
+boto3               # AWS SDK for Python (for S3, etc.)
+
 # Authentication
 passlib[bcrypt]
 email-validator

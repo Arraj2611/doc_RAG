@@ -15,10 +15,15 @@ from weaviate.collections.classes.tenants import Tenant
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.documents import Document
 import json
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 from passlib.context import CryptContext
+
+# AWS SDK
+import boto3
+from botocore.exceptions import ClientError
+import io # For BytesIO with upload_fileobj if needed, or directly passing file.file
 
 from .ragbase.chain import create_chain, save_message_pair
 from .ragbase import ingest
@@ -46,23 +51,28 @@ async def lifespan(app: FastAPI):
     # --- STARTUP --- 
     print("--- Application Startup --- ")
     
-    # 1. Clear tmp upload directory
-    upload_dir = Config.Path.DOCUMENTS_DIR
+    # 1. Clear tmp upload directory (Consider if this is still needed with OCI)
+    # If Config.Path.DOCUMENTS_DIR is only a temporary staging, clearing might be okay.
+    # If uploads go directly to OCI, this local directory might not be used for uploads anymore.
+    upload_dir = Config.Path.DOCUMENTS_DIR # This is backend/database/documents
+    # The original code clears this. If OCI is the primary store, 
+    # clearing a local 'cache' or 'staging' on startup could still be valid.
+    # However, if this path is *exclusively* for local-only (non-cloud) runs, 
+    # then for cloud deployment this section might need conditional logic or removal.
+    # For now, keeping the original logic, but be mindful of its role.
     if upload_dir.exists() and upload_dir.is_dir():
-        print(f"Clearing existing upload directory: {upload_dir}")
+        print(f"Clearing existing local upload directory: {upload_dir}")
         try:
             shutil.rmtree(upload_dir)
-            print("Upload directory cleared.")
+            print("Local upload directory cleared.")
         except Exception as e:
-            print(f"Warning: Could not clear upload directory {upload_dir}: {e}")
-    # Ensure the directory exists after attempting removal
+            print(f"Warning: Could not clear local upload directory {upload_dir}: {e}")
     try:
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Ensured upload directory exists: {upload_dir}")
+        upload_dir.mkdir(parents=True, exist_ok=True) # Ensures it exists if used for temp purposes
+        print(f"Ensured local upload directory exists: {upload_dir}")
     except Exception as e:
-         print(f"FATAL: Could not create upload directory {upload_dir}: {e}")
-         # Decide if you want to exit or continue without upload functionality
-         # exit(1)
+         print(f"Warning: Could not create local upload directory {upload_dir}: {e}")
+         # In a cloud env, if this local path is critical and fails, it might be an issue.
 
     # 2. Delete obsolete processed_hashes.json
     hashes_file = Config.Path.PROCESSED_HASHES_FILE
@@ -265,16 +275,23 @@ ALLOWED_EXTENSIONS = { ".pdf", ".docx", ".txt", ".md", ".xlsx", ".csv"}
 
 @app.post("/api/upload", status_code=200)
 async def upload_documents(session_id: Annotated[str, Form()], files: Annotated[List[UploadFile], File()]) -> Dict:
-    """Endpoint to upload one or more documents for a specific session."""
+    """Endpoint to upload one or more documents for a specific session.
+    MODIFIED FOR AWS S3: Files will be uploaded to AWS S3.
+    """
     print(f"UPLOAD: Received {len(files)} file(s) for upload in session: {session_id}")
-    
-    # --- Create session-specific upload directory --- 
-    # Use the configured path
-    session_upload_dir = Config.Path.DOCUMENTS_DIR / session_id 
-    session_upload_dir.mkdir(parents=True, exist_ok=True)
-    # Log the directory path being used
-    print(f"UPLOAD: Ensured upload directory exists: {session_upload_dir.resolve()}") 
-    # -------------------------------------------
+
+    # --- AWS S3 Client Initialization ---
+    try:
+        # Boto3 will use credentials from environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN),
+        # an IAM role (if running on EC2/ECS), or the AWS CLI configuration (~/.aws/credentials).
+        s3_client = boto3.client('s3', region_name=Config.AWS.S3_REGION)
+    except Exception as e:
+        print(f"UPLOAD: ERROR initializing AWS S3 client: {e}")
+        raise HTTPException(status_code=500, detail="Could not connect to Object Storage (S3).")
+    # ----------------------------------
+
+    s3_object_prefix = f"tenants/{session_id}/"
+    print(f"UPLOAD: Target S3 prefix: {s3_object_prefix}")
 
     processed_filenames = []
     allowed_count = 0
@@ -288,52 +305,49 @@ async def upload_documents(session_id: Annotated[str, Form()], files: Annotated[
             continue
 
         allowed_count += 1
-        file_path = None
+        safe_filename = Path(file.filename).name
+        s3_object_key = f"{s3_object_prefix}{safe_filename}"
+
         try:
-            safe_filename = Path(file.filename).name
-            file_path = session_upload_dir / safe_filename
-            # Log the specific file path before writing
-            print(f"UPLOAD: Attempting to save file to: {file_path.resolve()}") 
+            # --- AWS S3 UPLOAD LOGIC ---
+            print(f"UPLOAD: Attempting to upload to S3: bucket='{Config.AWS.S3_BUCKET_NAME}', key='{s3_object_key}'")
+            # FastAPI's UploadFile.file is a SpooledTemporaryFile, which is a file-like object.
+            # We need to ensure the file pointer is at the beginning if it has been read before,
+            # though for a new UploadFile, it should be.
+            await file.seek(0) 
+            s3_client.upload_fileobj(
+                file.file, # Pass the file-like object
+                Config.AWS.S3_BUCKET_NAME,
+                s3_object_key
+            )
+            print(f"UPLOAD: Successfully uploaded to S3: {s3_object_key}")
+            # --- END AWS S3 UPLOAD LOGIC ---
             
-            content = await file.read() 
-            with open(file_path, "wb") as buffer:
-                buffer.write(content)
-                
             processed_filenames.append(safe_filename)
-            # Log success AFTER write completes
-            print(f"UPLOAD: Successfully saved file: {file_path.resolve()}") 
             
-        except Exception as e:
-            # Log the exact error during save
-            print(f"UPLOAD: ERROR saving file {file.filename} to {session_upload_dir}: {e}")
+        except ClientError as e:
+            print(f"UPLOAD: ERROR (ClientError) processing file {file.filename} for S3 upload to {s3_object_key}: {e}")
             traceback.print_exc()
-            
+            # Optionally, collect failed filenames here if you want to report them
+        except Exception as e:
+            print(f"UPLOAD: ERROR (General) processing file {file.filename} for S3 upload to {s3_object_key}: {e}")
+            traceback.print_exc()
         finally:
-            # Ensure file handle is closed even if error occurs
-            # Check if file object exists and has a close method
             if file and hasattr(file, 'close') and callable(file.close):
                 try:
                     await file.close()
-                    print(f"Closed file handle for: {file.filename}")
                 except Exception as close_err:
                     print(f"Warning: Error closing file handle for {file.filename}: {close_err}")
-            elif file and hasattr(file, 'file') and hasattr(file.file, 'close') and callable(file.file.close):
-                # Handle UploadFile's internal file object if needed (less common)
-                 try:
-                     file.file.close()
-                     print(f"Closed internal file handle for: {file.filename}")
-                 except Exception as close_err:
-                     print(f"Warning: Error closing internal file handle for {file.filename}: {close_err}")
 
     if allowed_count == 0:
         raise HTTPException(status_code=400, detail=f"No files with allowed extensions ({', '.join(ALLOWED_EXTENSIONS)}) were provided.")
 
     if not processed_filenames:
-        raise HTTPException(status_code=500, detail="All valid files failed to save.")
+        raise HTTPException(status_code=500, detail="All valid files failed to upload to Object Storage (S3).")
 
     return {
-        "message": f"{len(processed_filenames)} valid file(s) uploaded successfully.", 
-        "filenames_saved": processed_filenames,
+        "message": f"{len(processed_filenames)} valid file(s) prepared for processing (uploaded to S3).", 
+        "filenames_saved_to_s3": processed_filenames,
         "skipped_unsupported_extension": skipped_count
     }
 
@@ -595,32 +609,50 @@ async def delete_user_insight(insight_id: str):
     return {"message": "Insight deleted successfully."}
 
 # --- NEW Endpoint to Serve Uploaded Files --- 
-@app.get("/api/files/{session_id}/{filename}", response_class=FileResponse)
+@app.get("/api/files/{session_id}/{filename}") # Removed response_class=StreamingResponse, will be RedirectResponse
 async def get_document_file(session_id: str, filename: str):
-    # TODO: Add user authentication check - does the user own this session_id?
-    # SECURITY: Prevent path traversal
-    if ".." in filename or "/" in filename or "\\" in filename:
+    if ".." in filename or "/" in filename or "\\\\": # Python auto-escapes backslashes in f-strings/strings
         raise HTTPException(status_code=400, detail="Invalid filename")
         
-    # Construct the path using Config
-    file_path = Config.Path.DOCUMENTS_DIR / session_id / filename
-    
-    if not file_path.exists() or not file_path.is_file():
-        print(f"Error: File not found at {file_path}")
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    # Check if file is within the intended directory (extra safety)
+    # --- AWS S3 Client Initialization ---
     try:
-        resolved_base = Config.Path.DOCUMENTS_DIR.resolve()
-        resolved_file = file_path.resolve()
-        if not str(resolved_file).startswith(str(resolved_base)):
-             print(f"Error: Attempt to access file outside allowed directory: {file_path}")
-             raise HTTPException(status_code=403, detail="Access forbidden")
-    except Exception as resolve_err:
-         print(f"Error resolving file path: {resolve_err}")
-         raise HTTPException(status_code=500, detail="Internal server error")
+        s3_client = boto3.client('s3', region_name=Config.AWS.S3_REGION, config=boto3.session.Config(signature_version='s3v4'))
+    except Exception as e:
+        print(f"GET_FILE: ERROR initializing AWS S3 client: {e}")
+        raise HTTPException(status_code=500, detail="Could not connect to Object Storage (S3).")
+    # -----------------------------------------------------
 
-    return FileResponse(path=str(file_path), filename=filename, media_type='application/pdf')
+    s3_object_key = f"tenants/{session_id}/{filename}"
+    
+    # --- AWS S3 GET OBJECT LOGIC ---
+    print(f"GET_FILE: Attempting to generate pre-signed URL for S3: bucket='{Config.AWS.S3_BUCKET_NAME}', key='{s3_object_key}'")
+    try:
+        # Generate a Pre-Signed URL
+        presigned_url = s3_client.generate_presigned_url('get_object',
+                                                         Params={'Bucket': Config.AWS.S3_BUCKET_NAME,
+                                                                 'Key': s3_object_key},
+                                                         ExpiresIn=300) # URL expires in 5 minutes (300 seconds)
+        
+        print(f"GET_FILE: Successfully generated pre-signed URL for {s3_object_key}")
+        return RedirectResponse(url=presigned_url)
+    
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code")
+        if error_code == 'NoSuchKey':
+            print(f"GET_FILE: File not found in S3: {s3_object_key}")
+            raise HTTPException(status_code=404, detail="File not found in Object Storage (S3)")
+        elif error_code == '403 Forbidden' or e.response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 403:
+             print(f"GET_FILE: Forbidden to access S3 key {s3_object_key}. Check bucket/object permissions and presigning setup.")
+             raise HTTPException(status_code=403, detail=f"Forbidden to access file from S3.")
+        else:
+            print(f"GET_FILE: S3 ClientError for {s3_object_key}: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Error retrieving file from S3: {e.response.get('Error', {}).get('Message', 'Unknown S3 error')}")
+    except Exception as e:
+        print(f"GET_FILE: Unexpected error for {s3_object_key}: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error while fetching file from S3")
+    # --- END AWS S3 GET OBJECT LOGIC ---
 
 # --- NEW: Delete Document Endpoint --- 
 @app.delete("/api/documents/{session_id}", status_code=200)

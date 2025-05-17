@@ -33,6 +33,24 @@ class Config:
         MONGO_CONNECTION_STRING = os.getenv("MONGO_CONNECTION_STRING")
         MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "doc_rag_db")
 
+    # class OCI:
+    #     OBJECT_STORAGE_NAMESPACE = os.getenv("OCI_OBJECT_STORAGE_NAMESPACE")
+    #     OBJECT_STORAGE_BUCKET_NAME = os.getenv("OCI_OBJECT_STORAGE_BUCKET_NAME")
+    #     OBJECT_STORAGE_REGION = os.getenv("OCI_OBJECT_STORAGE_REGION")
+    #     # For OCI authentication, it's best to use Instance Principals or a config file.
+    #     # If using a config file, set its path via an env var:
+    #     OCI_CONFIG_FILE_PATH = os.getenv("OCI_CONFIG_FILE_PATH", "~/.oci/config") 
+    #     OCI_CONFIG_PROFILE = os.getenv("OCI_CONFIG_PROFILE", "DEFAULT")
+
+    class AWS:
+        S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
+        S3_REGION = os.getenv("AWS_S3_REGION")
+        # For AWS authentication when running on EC2, IAM Roles are recommended.
+        # Locally, AWS CLI configured credentials (via `aws configure`) are often used by Boto3 automatically.
+        # Specific access key and secret key can also be set as environment variables:
+        # AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+        # AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+
     class Auth:
         GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
