@@ -23,7 +23,7 @@ class Config:
         WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
         WEAVIATE_INDEX_NAME = os.getenv("WEAVIATE_INDEX_NAME", "RaggerIndex")
         WEAVIATE_TEXT_KEY = "text"
-        # WEAVIATE_EMBEDDING_MODEL = os.getenv("WEAVIATE_EMBEDDING_MODEL", "Snowflake/snowflake-arctic-embed-l-v2.0") # This might be set by Langchain/Groq integration
+        WEAVIATE_EMBEDDING_MODEL = os.getenv("WEAVIATE_EMBEDDING_MODEL", "Snowflake/snowflake-arctic-embed-l-v2.0") # Reinstated: Ensure this matches your Weaviate vectorizer module's model
 
         # --- MongoDB Configuration --- 
         MONGO_CONNECTION_STRING = os.getenv("MONGO_CONNECTION_STRING")
