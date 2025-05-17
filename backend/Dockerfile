@@ -5,6 +5,10 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
+# Install system dependencies required by OpenCV (a dependency of unstructured for PDF processing)
+RUN apt-get update && apt-get install -y libgl1-mesa-glx \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set the working directory in the container
 WORKDIR /app
 
