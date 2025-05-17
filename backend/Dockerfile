@@ -13,11 +13,11 @@ WORKDIR /app
 # RUN apt-get update && apt-get install -y libreoffice tesseract-ocr poppler-utils && rm -rf /var/lib/apt/lists/*
 
 # In your Dockerfile
-COPY backend/requirements.lock.txt .
+COPY requirements.lock.txt .
 RUN pip install --no-cache-dir -r requirements.lock.txt
 
 # Copy the entire backend directory into the container
-COPY backend/ ./backend/
+COPY . ./backend/
 
 # Expose the port the app runs on
 EXPOSE 8000
