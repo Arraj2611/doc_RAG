@@ -40,9 +40,8 @@ load_dotenv()
 def get_weaviate_client_dependency(request: Request):
     """Dependency function to get the client from app state."""
     client = getattr(request.app.state, 'weaviate_client', None)
-    # If remote mode is expected but client is missing, raise an error
-    if not Config.USE_LOCAL_VECTOR_STORE and client is None:
-         print("ERROR: Weaviate client dependency failed - client not initialized in app state for remote mode.")
+    if client is None:
+         print("ERROR: Weaviate client dependency failed - client not initialized in app state.")
          raise HTTPException(status_code=503, detail="Weaviate client not available")
     return client
 
@@ -51,88 +50,50 @@ async def lifespan(app: FastAPI):
     # --- STARTUP --- 
     print("--- Application Startup --- ")
     
-    # 1. Clear tmp upload directory (Consider if this is still needed with OCI)
-    # If Config.Path.DOCUMENTS_DIR is only a temporary staging, clearing might be okay.
-    # If uploads go directly to OCI, this local directory might not be used for uploads anymore.
-    upload_dir = Config.Path.DOCUMENTS_DIR # This is backend/database/documents
-    # The original code clears this. If OCI is the primary store, 
-    # clearing a local 'cache' or 'staging' on startup could still be valid.
-    # However, if this path is *exclusively* for local-only (non-cloud) runs, 
-    # then for cloud deployment this section might need conditional logic or removal.
-    # For now, keeping the original logic, but be mindful of its role.
-    if upload_dir.exists() and upload_dir.is_dir():
-        print(f"Clearing existing local upload directory: {upload_dir}")
-        try:
-            shutil.rmtree(upload_dir)
-            print("Local upload directory cleared.")
-        except Exception as e:
-            print(f"Warning: Could not clear local upload directory {upload_dir}: {e}")
-    try:
-        upload_dir.mkdir(parents=True, exist_ok=True) # Ensures it exists if used for temp purposes
-        print(f"Ensured local upload directory exists: {upload_dir}")
-    except Exception as e:
-         print(f"Warning: Could not create local upload directory {upload_dir}: {e}")
-         # In a cloud env, if this local path is critical and fails, it might be an issue.
+    # Local directory clearing removed as S3 is primary for documents
+    # and processed_hashes.json is obsolete with Weaviate's direct hash checking.
 
-    # 2. Delete obsolete processed_hashes.json
-    hashes_file = Config.Path.PROCESSED_HASHES_FILE
-    if hashes_file.exists():
-        print(f"Deleting obsolete hashes file: {hashes_file}")
-        try:
-            hashes_file.unlink()
-            print("Obsolete hashes file deleted.")
-        except Exception as e:
-            print(f"Warning: Could not delete obsolete hashes file {hashes_file}: {e}")
-
-    # 3. Initialize Weaviate Client (if needed)
+    # Initialize Weaviate Client
     app.state.weaviate_client = None 
-    if not Config.USE_LOCAL_VECTOR_STORE:
-        print("Initializing Weaviate client at application startup (Remote Mode)...")
-        weaviate_url = Config.Database.WEAVIATE_URL
-        weaviate_key = Config.Database.WEAVIATE_API_KEY
-        
-        if not weaviate_url or not weaviate_key:
-            print("ERROR: WEAVIATE_URL and WEAVIATE_API_KEY must be set for Weaviate mode.")
-        else:
-            try:
-                # Connect WITHOUT extra headers
-                client_instance = weaviate.connect_to_wcs(
-                    cluster_url=weaviate_url,
-                    auth_credentials=Auth.api_key(weaviate_key)
-                )
-                print("Weaviate client connected and ready.")
-                app.state.weaviate_client = client_instance
-                
-                # Startup Check (remains the same)
-                collection_name = COLLECTION_NAME 
-                if not client_instance.collections.exists(collection_name):
-                    print(f"Weaviate collection '{collection_name}' not found during startup. Will be created by ingest if needed.")
-                else:
-                    print(f"Weaviate collection '{collection_name}' already exists.")
-                    
-            except Exception as e:
-                print(f"ERROR during Weaviate connection or initial check: {e}")
-                traceback.print_exc()
-                app.state.weaviate_client = None
+    print("Initializing Weaviate client at application startup...")
+    weaviate_url = Config.Database.WEAVIATE_URL
+    weaviate_key = Config.Database.WEAVIATE_API_KEY
+    
+    if not weaviate_url or not weaviate_key:
+        print("ERROR: WEAVIATE_URL and WEAVIATE_API_KEY must be set for Weaviate mode.")
+        # Consider if this should be a fatal error that stops startup
     else:
-        print("Running in LOCAL vector store mode. Weaviate client not initialized.")
-        app.state.weaviate_client = None
+        try:
+            client_instance = weaviate.connect_to_wcs(
+                cluster_url=weaviate_url,
+                auth_credentials=Auth.api_key(weaviate_key)
+            )
+            print("Weaviate client connected and ready.")
+            app.state.weaviate_client = client_instance
             
-    # 4. Initialize MongoDB Client
+            collection_name = COLLECTION_NAME 
+            if not client_instance.collections.exists(collection_name):
+                print(f"Weaviate collection '{collection_name}' not found during startup. Will be created by ingest if needed.")
+            else:
+                print(f"Weaviate collection '{collection_name}' already exists.")
+                
+        except Exception as e:
+            print(f"ERROR during Weaviate connection or initial check: {e}")
+            traceback.print_exc()
+            app.state.weaviate_client = None # Ensure it's None on failure
+            
+    # Initialize MongoDB Client
     print("Initializing MongoDB client...")
     if mongo_handler.connect_to_mongo() is not None: 
         print("MongoDB connection successful.")
     else:
         print("ERROR: Failed to connect to MongoDB during startup.")
-        # Decide if this is fatal
-        # exit(1) 
             
     print("--- Startup Complete ---")
-    yield # Application runs here
+    yield
     
     # --- SHUTDOWN --- 
     print("--- Application Shutdown --- ")
-    # Close Weaviate
     client_to_close = getattr(app.state, 'weaviate_client', None)
     if client_to_close and hasattr(client_to_close, 'close'):
         print("Closing Weaviate client connection...")
@@ -141,9 +102,7 @@ async def lifespan(app: FastAPI):
     else:
         print("No Weaviate client found in app.state to close.")
         
-    # Close MongoDB
     mongo_handler.close_mongo_connection()
-    
     print("--- Shutdown Complete --- ")
 
 # --- Setup FastAPI App with Lifespan --- 
@@ -173,38 +132,19 @@ app.add_middleware(
 
 # --- NEW FUNCTION TO CREATE CHAIN --- 
 def create_chain_for_request(session_id: str, client: Optional[weaviate.Client] = None) -> Runnable:
-    """Creates a RAG chain instance specifically for the given session_id."""
-    print(f"Creating new RAG chain for session: {session_id} (Mode: {'Local' if Config.USE_LOCAL_VECTOR_STORE else 'Remote'})...")
+    """Creates a RAG chain instance specifically for the given session_id using Weaviate."""
+    print(f"Creating new RAG chain for session: {session_id} (Mode: Weaviate)...")
     llm = create_llm() # Create LLM
 
-    retriever = None
-    if Config.USE_LOCAL_VECTOR_STORE:
-        # Local FAISS mode
-        try:
-            retriever = create_retriever(llm=llm) # create_retriever handles local setup
-            if retriever is None:
-                 raise ValueError("Failed to create local FAISS retriever.")
-            print("Local FAISS retriever created successfully for chain.")
-        except Exception as e:
-            print(f"ERROR creating local retriever for session {session_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to initialize local retriever: {e}")
-        # Pass retriever to create_chain, client will be None
-        chain = create_chain(llm=llm, retriever=retriever, client=None)
-
-    else:
-        # Remote Weaviate mode
-        if not client:
-            # This should ideally be caught by the dependency, but double-check
-            print(f"ERROR: Weaviate client is required for remote mode chain creation (session: {session_id})")
-            raise HTTPException(status_code=500, detail="Weaviate client unavailable for chain creation.")
-        
-        # Pass client to create_chain, retriever will be None
-        # create_chain uses the client to call retrieve_context_weaviate with session_id
-        chain = create_chain(llm=llm, retriever=None, client=client)
-        print(f"Weaviate-based chain created successfully for session {session_id}.")
+    if not client:
+        print(f"ERROR: Weaviate client is required for chain creation (session: {session_id})")
+        raise HTTPException(status_code=500, detail="Weaviate client unavailable for chain creation.")
+    
+    # create_chain uses the client to call retrieve_context_weaviate with session_id
+    chain = create_chain(llm=llm, retriever=None, client=client)
+    print(f"Weaviate-based chain created successfully for session {session_id}.")
 
     if chain is None:
-        # This shouldn't happen if exceptions are raised correctly above
         raise HTTPException(status_code=500, detail="Failed to create RAG chain.")
         
     return chain

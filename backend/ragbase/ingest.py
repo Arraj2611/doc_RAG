@@ -39,17 +39,10 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 TEXT_KEY = "text" # Consistent key for text property
 
-def get_file_hash(file_content: bytes = None, file_path: str = None) -> str:
-    """Calculates SHA256 hash. Can take bytes directly or a file path."""
+def get_file_hash(file_content: bytes) -> str:
+    """Calculates SHA256 hash from bytes."""
     hasher = hashlib.sha256()
-    if file_content:
-        hasher.update(file_content)
-    elif file_path:
-        with open(file_path, 'rb') as file:
-            while chunk := file.read(8192):
-                hasher.update(chunk)
-    else:
-        raise ValueError("Either file_content or file_path must be provided to get_file_hash")
+    hasher.update(file_content)
     return hasher.hexdigest()
 
 def ensure_collection_exists(client: weaviate.Client):
@@ -183,21 +176,15 @@ def add_chunks_to_weaviate(client: weaviate.Client, tenant_id: str, chunks: List
     print(f"  Finished inserting chunks for tenant '{tenant_id}': {successful_inserts} succeeded, {failed_inserts} failed.")
     return failed_inserts == 0
 
-def load_and_chunk_docs(file_path: str = None, file_content: bytes = None, filename_for_loader: str = "unknown_file", chunk_size: int = CHUNK_SIZE, chunk_overlap: int = CHUNK_OVERLAP) -> List[Document]:
-    """Loads a document (from path or content) and splits it into chunks."""
+def load_and_chunk_docs(file_content: bytes, filename_for_loader: str = "unknown_file", chunk_size: int = CHUNK_SIZE, chunk_overlap: int = CHUNK_OVERLAP) -> List[Document]:
+    """Loads a document (from content) and splits it into chunks."""
     temp_file_path_for_loader = None # Initialize to ensure it's in scope for finally
     try:
-        if file_content:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename_for_loader).suffix or ".tmp") as tmp_file:
-                tmp_file.write(file_content)
-                temp_file_path_for_loader = tmp_file.name
-            print(f"Ingestor: Loading document from temporary file (from content): {temp_file_path_for_loader} (original: {filename_for_loader})")
-            loader_path = temp_file_path_for_loader
-        elif file_path:
-            print(f"Ingestor: Loading document from path: {file_path}")
-            loader_path = file_path
-        else:
-            raise ValueError("Either file_path or file_content must be provided to load_and_chunk_docs")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename_for_loader).suffix or ".tmp") as tmp_file:
+            tmp_file.write(file_content)
+            temp_file_path_for_loader = tmp_file.name
+        print(f"Ingestor: Loading document from temporary file (from content): {temp_file_path_for_loader} (original: {filename_for_loader})")
+        loader_path = temp_file_path_for_loader
 
         loader = UnstructuredFileLoader(
              loader_path,
@@ -215,7 +202,7 @@ def load_and_chunk_docs(file_path: str = None, file_content: bytes = None, filen
         print(f"Ingestor: Split {filename_for_loader} into {len(chunks)} chunks.")
         return chunks
     except Exception as e:
-        original_source = filename_for_loader if file_content else file_path
+        original_source = filename_for_loader
         print(f"Error loading/chunking document {original_source}: {e}")
         traceback.print_exc() # Added for more detail on chunking errors
         return []
@@ -230,14 +217,8 @@ def load_and_chunk_docs(file_path: str = None, file_content: bytes = None, filen
 def process_files_for_session(session_id: str, client: weaviate.Client = None) -> Dict[str, Any]:
     """Processes uploaded files for a given session_id from AWS S3,
     checking for existing hashes within the session's tenant before ingestion."""
-    if Config.USE_LOCAL_VECTOR_STORE:
-        print(f"Processing request for session '{session_id}' in LOCAL mode - skipping Weaviate ingestion.")
-        # Still might need local hash checking if you maintain separate FAISS indexes per session
-        return {"message": "Local mode - processing skipped.", "processed_files": [], "skipped_count": 0, "failed_files": []}
-
     if not client:
-        print("ERROR: Weaviate client is required for processing in remote mode.")
-        # Return a dictionary that matches the expected ProcessResponse structure implicitly
+        print("ERROR: Weaviate client is required for processing.")
         return {"message": "Processing failed: Weaviate client not available.", "processed_files": [], "skipped_count": 0, "failed_files": []}
 
     start_time = time.time()

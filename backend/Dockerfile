@@ -8,10 +8,6 @@ ENV PYTHONUNBUFFERED 1
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies that might be required by 'unstructured' or other libraries.
-# Example: libreoffice for .doc/.docx, tesseract for OCR. Add as needed.
-# RUN apt-get update && apt-get install -y libreoffice tesseract-ocr poppler-utils && rm -rf /var/lib/apt/lists/*
-
 # In your Dockerfile
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

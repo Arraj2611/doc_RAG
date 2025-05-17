@@ -1,8 +1,8 @@
 # Core FastAPI
 fastapi
-uvicorn[standard] # Includes performance extras like watchfiles (for --reload)
+uvicorn[standard]
 
-# Pydantic (often used with FastAPI)
+# Pydantic
 pydantic
 
 # Environment Variables
@@ -10,14 +10,12 @@ python-dotenv
 
 # Langchain Core & Integrations
 langchain
-langchain-community # Common integrations
-langchain-ollama    # If using Ollama
-langchain-groq      # If using Groq
-tiktoken            # Often needed for token counting
+langchain-community # Common community integrations
+langchain-groq
+tiktoken
 
 # Vector Stores
-weaviate-client     # For Weaviate Cloud
-# faiss-cpu           # Uncomment if USE_LOCAL_VECTOR_STORE is True in config
+weaviate-client
 
 # Document Processing
 unstructured[pdf,docx] # Base + PDF and DOCX support
@@ -26,11 +24,8 @@ unstructured[pdf,docx] # Base + PDF and DOCX support
 pymongo             # For MongoDB (chat history, metadata)
 
 # Cloud Provider SDKs
-# oci-python-sdk      # For Oracle Cloud Infrastructure (e.g., Object Storage)
 boto3               # AWS SDK for Python (for S3, etc.)
 
 # Authentication
 passlib[bcrypt]
 email-validator
-
-# Add any other specific dependencies your project uses here
