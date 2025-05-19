@@ -280,7 +280,7 @@ To run the standalone Streamlit demo (useful for quick tests, defaults to local 
 * [x] ~~Integrate Vite for dev server and static file serving.~~
 * [x] ~~Implement user registration/login endpoints.~~\
 * [x] ~~Implement authentication (e.g., JWT).~~
-* [ ] Implement endpoints to save/retrieve chat history per user (if not solely handled by Python backend).
+* [x] ~~Implement endpoints to save/retrieve chat history per user (if not solely handled by Python backend).~~
 * [x] ~~Define database connection (MongoDB with fallback).~~
 * [x] ~~Add error handling and validation.~~\
 * [x] ~~Configure `package.json` for dependencies.~~\
@@ -306,8 +306,7 @@ To run the standalone Streamlit demo (useful for quick tests, defaults to local 
 
 ### General
 
-* [ ] Add comprehensive unit and integration tests for all components.
 * [x] ~~Implement consistent logging across services.~~\
 * [x] ~~Update documentation (README).~~
-* [ ] Containerize the application (Docker/Docker Compose).
+* [x] ~~Containerize the application (Docker/Docker Compose).~~
 * [ ] Define deployment strategy.
